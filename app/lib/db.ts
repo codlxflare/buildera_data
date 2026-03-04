@@ -42,6 +42,7 @@ function getPool(): import("mysql2/promise").Pool {
       charset: "utf8mb4",
     });
   }
+  if (!pool) throw new Error("DB pool not initialized");
   return pool;
 }
 
