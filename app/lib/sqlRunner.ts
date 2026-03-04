@@ -3,6 +3,7 @@
  * Защита от SQL-инъекций: только один SELECT, только разрешённые таблицы, запрет опасных конструкций и комментариев.
  */
 
+import type { RowDataPacket } from "mysql2/promise";
 import { runReadOnlyQuery, isDbConfigured } from "./db";
 
 const SQL_BLOCK_REGEX = /```(?:sql)?\s*([\s\S]*?)```/i;
@@ -58,7 +59,7 @@ function extractTableNames(sql: string): string[] {
   while ((m = joinRe.exec(normalized)) !== null) {
     if (m[1]) tables.push(m[1]);
   }
-  return [...new Set(tables)];
+  return Array.from(new Set(tables));
 }
 
 export interface SqlResult {
@@ -144,7 +145,7 @@ export async function runUserSql(sql: string): Promise<SqlResult | SqlError> {
   }
   const limited = ensureLimit(sql, MAX_ROWS);
   try {
-    const rows = await runReadOnlyQuery<Record<string, unknown>>(limited, []);
+    const rows = await runReadOnlyQuery<RowDataPacket>(limited, []);
     return { ok: true, rows, rowCount: rows.length };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Ошибка выполнения запроса.";

@@ -34,7 +34,7 @@ export function setCached(message: string, reply: string, charts: unknown[], sug
   const k = key(message);
   cache.set(k, { reply, charts, suggestions, at: Date.now() });
   if (cache.size > 500) {
-    const oldest = [...cache.entries()].sort((a, b) => a[1].at - b[1].at);
+    const oldest = Array.from(cache.entries()).sort((a, b) => a[1].at - b[1].at);
     oldest.slice(0, 100).forEach(([kk]) => cache.delete(kk));
   }
 }

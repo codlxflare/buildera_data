@@ -3,6 +3,7 @@
  * Результат подставляется как [Данные из БД: ...]. Ответ — только структура и цифры, без описания запроса.
  */
 
+import type { RowDataPacket } from "mysql2/promise";
 import { isDbConfigured, runReadOnlyQuery } from "./db";
 
 /** Ключевые слова запроса данных: если есть в сообщении — считаем запросом к данным. */
@@ -12,13 +13,11 @@ const DATA_REQUEST_KEYWORDS = [
   "метрик", "показател", "итог", "сводк", "статистик", "число", "цифр",
 ];
 
-type Row = { count?: number; total?: string | number; department_name?: string; [k: string]: unknown };
-
 const METRICS: Array<{
   triggers: string[];
   sql: string;
   params?: (string | number)[];
-  format: (rows: Row[]) => { label: string; data: Record<string, string | number> } | null;
+  format: (rows: RowDataPacket[]) => { label: string; data: Record<string, string | number> } | null;
 }> = [
   // Завершённые сделки за последний месяц — количество
   {
@@ -204,7 +203,7 @@ export async function getMetricsForMessage(userMessage: string): Promise<Metrics
     const matched = m.triggers.filter((t) => normalized.includes(t)).length;
     if (matched < 2) continue;
     try {
-      const rows = await runReadOnlyQuery<Row>(m.sql, m.params ?? []);
+      const rows = await runReadOnlyQuery<RowDataPacket>(m.sql, m.params ?? []);
       const result = m.format(rows);
       if (!result) continue;
       const parts = [result.label, ...Object.entries(result.data).map(([k, v]) => `${k}: ${v}`)];

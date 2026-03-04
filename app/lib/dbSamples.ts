@@ -5,6 +5,7 @@
 
 import path from "path";
 import fs from "fs";
+import type { RowDataPacket } from "mysql2/promise";
 import { isDbConfigured, runReadOnlyQuery } from "./db";
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 час
@@ -15,7 +16,7 @@ let cache: { text: string; ts: number } | null = null;
 interface SampleQuery {
   name: string;
   sql: string;
-  format: (rows: Record<string, unknown>[]) => string;
+  format: (rows: RowDataPacket[]) => string;
 }
 
 const SAMPLE_QUERIES: SampleQuery[] = [
@@ -91,7 +92,7 @@ async function fetchSamplesFromDb(): Promise<string> {
   ];
   for (const q of SAMPLE_QUERIES) {
     try {
-      const rows = await runReadOnlyQuery<Record<string, unknown>>(q.sql, []);
+      const rows = await runReadOnlyQuery<RowDataPacket>(q.sql, []);
       const formatted = q.format(rows);
       lines.push(`${q.name}: ${formatted}`);
     } catch {
