@@ -1,0 +1,1842 @@
+
+MacroData v1.1.73
+advertising_expenses
+calls
+calls_subjects
+company_departments
+contacts
+contacts_links
+estate_advertising_channels
+estate_attributes
+estate_attributes_names
+estate_audience
+estate_audience_estate
+estate_buys
+estate_buys_attr
+estate_buys_attributes
+estate_buys_attributes_names
+estate_buys_statuses_log
+estate_buys_utm
+estate_buys_utm_history
+estate_deals
+estate_deals_addons
+estate_deals_contacts
+estate_deals_discounts
+estate_deals_docs
+estate_deals_participants
+estate_deals_statuses
+estate_houses
+estate_houses_price_stat
+estate_meetings
+estate_mortgage
+estate_promos
+estate_restoration
+estate_sales_plans
+estate_sales_plans_metrics
+estate_sells
+estate_sells_attr
+estate_sells_price_min_stat
+estate_sells_price_stat
+estate_sells_statuses_log
+estate_statuses
+estate_statuses_reasons
+estate_tags
+estate_transfer
+estate_transfer_attempts
+finances
+finances_accounts
+finances_subtypes
+finances_types
+geo_city_complex
+inventory_demands
+inventory_noms_top
+inventory_warehouse
+inventory_warehouse_stocks
+noms
+noms_category
+projects
+projects_tasks
+projects_tasks_agreements
+projects_tasks_checklists
+projects_tasks_estimate
+projects_tasks_requests
+promos
+stat
+tags
+tasks
+tasks_tags
+users
+MacroData v1.1.73
+
+Changelog
+
+advertising_expenses
+Маркетинговые расходы
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+expenses_date	date			NO	дата начисления затрат
+expenses_summa	decimal	38	2	YES	сумма затрат
+complex	varchar	64		YES	ЖК из справочника
+house	varchar	64		YES	номер дома
+utm_source	varchar	64		YES	
+utm_campaign	varchar	64		YES	
+utm_medium	varchar	64		YES	
+calls
+Звонки
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+calls_id	int	11		NO	id звонка
+updated_at	timestamp			YES	timestamp модификации
+company_id	int	11		NO	
+call_date	timestamp			YES	дата/время звонка
+calls_status	varchar	16		NO	статус звонка
+direction	varchar	16		NO	направление звонка [in - входящий|out - исходящий|internal - внутренний]
+phone	varchar	16		NO	телефон звонящего
+contacts_id	int	10		YES	контакт звонящего
+first_manager_id	int	11		NO	первый менеджер, на которого поступил звонок
+manager_id	int	11		NO	менеджер звонка (ответил/позвонил)
+manager_ext	varchar	64		NO	расширение телефона менеджера
+estate_id	int	11		YES	заявка звонка
+audience_id	int	11		YES	id аудитории
+duration	int	4		NO	длительность звонка, сек
+vendor	varchar	32		NO	вендор телефонии
+gateway_phone	varchar	64		NO	шлюз звонка
+is_first_unique	tinyint	1		YES	признак первого уникального звонка
+is_group_call	tinyint	1		NO	признак группового звонка
+is_no_target	int	1		NO	нецелевой звонок
+is_hidden	tinyint	1		NO	скрытый звонок
+callback_id	int	11		YES	ссылка на звонок перезвонивший по пропущенному
+callback_date	timestamp			YES	ссылка перезвона по пропущенному
+callback_users_id	int	11		YES	перезвонивший менеджер
+Статусы звонков
+
+Ключ	Статус
+answered	Отвечен
+unanswered	Пропущен
+incoming	Звонок
+talking	Разговор
+out	Исходящий
+out_success	Исходящий
+out_error	Исходящий (не соед.)
+callbacked	Перезвонили
+transfered	Переведен
+Связи calls с другими таблицами
+
+Field	Links
+calls.contacts_id	contacts.id
+calls.first_manager_id	users.id
+calls.manager_id	users.id
+calls.estate_id	estate_buys.id
+calls.audience_id	estate_audience.id
+calls.callback_id	calls.calls_id
+calls.callback_users_id	users.id
+calls_subjects
+Тематики звонков
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+calls_subjects_id	int	11		NO	id тематики
+company_id	int	10		NO	
+created_at	timestamp			NO	timestamp добавления
+updated_at	timestamp			NO	timestamp модификации
+title	varchar	255		NO	название тематики
+folder_id	int	11		YES	id папки
+is_folder	tinyint	1		NO	признак папки
+is_archived	tinyint	1		NO	признак архивности
+company_departments
+Отделы компании
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+departments_id	int	11		NO	id отдела
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+department_name	varchar	64		NO	отдел
+department_type	varchar	32		YES	тип отдела
+dep_boss_id	int	11		YES	руководитель отдела
+geo_city_id	int	11		YES	город отдела
+Связи company_departments с другими таблицами
+
+Field	Links
+company_departments.dep_boss_id	users.id
+contacts
+Контакты
+
+Для контактов ограничена передача персональных данных Для включения отображения ПД - обратитесь в службу сопровождения
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+contacts_id	int	11		NO	
+company_id	int	10		YES	
+created_at	timestamp			NO	дата (Timestamp) добавления контакта
+updated_at	timestamp			YES	дата (Timestamp) изменения контакта
+contacts_buy_type	tinyint	3		NO	тип контакта, 0 - ФЛ, 1- ЮЛ
+contacts_buy_sex	varchar	1		NO	пол
+contacts_buy_marital_status	varchar	16		YES	семейное положение
+contacts_buy_dob	date			YES	дата рождения
+contacts_buy_name	varchar	255		NO	ФИО/название ЮЛ
+name_last	varchar	32		NO	Фамилия
+name_first	varchar	32		NO	Имя
+name_middle	varchar	32		NO	Отчество
+contacts_buy_phones	varchar	255		NO	
+contacts_buy_emails	varchar	255		NO	
+passport_bithplace	varchar	100		NO	место рождения
+passport_address	varchar	255		NO	адрес прописки
+snils	varchar	32		NO	СНИЛС ФЛ
+comm_inn	varchar	12		NO	ИНН ЮЛ
+comm_kpp	varchar	9		NO	КПП ЮЛ
+fl_inn	varchar	14		NO	ИНН ФЛ
+roles_set	varchar	255		NO	Роли контакта
+contacts_links
+Связи контактов
+
+Значение contacts_1 всегда меньше чем contacts_2, что обеспечивает контролируемую уникальность и отсутствие двух записей в таблице, относящихся к одной и той же паре контактов
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	10		NO	
+company_id	int	10		YES	
+created_at	datetime			YES	дата (Y-m-d H:i:s) создания контакта
+contacts_1	int	10		NO	первый связываемый контакт
+contacts_2	int	10		NO	второй связываемый контакт
+link_type	tinyint	4		NO	Тип связи
+Используемые типы
+
+ID	Тип связи
+100	Родственник
+251	Партнер
+252	Подписант
+253	Агент
+254	Директор
+255	Представитель
+Связи contacts_links с другими таблицами
+
+Field	Links
+contacts_links.contacts_1	contacts.id
+contacts_links.contacts_2	contacts.id
+estate_advertising_channels
+Рекламные каналы
+
+Настройка каналов происходит в Компания→Каталоги→Рекламные каналы
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	11		NO	
+name	varchar	255		NO	название канала
+is_archived	tinyint	1		NO	в архиве
+estate_attributes
+Дополнительные атрибуты
+
+дополнительные (кастомные) атрибуты заявок, объектов, контактов, сделок, акций
+
+Field	Type	Length	Decimal	Null	Comments
+id	varchar	160		NO	id набора данных
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+entity	varchar	128		NO	сущность (contacts, estate_buy, estate_sell, estate_deal, promos)
+entity_id	int	11		NO	id сущности
+attr_id	int	11		NO	id атрибута
+attr_value	varchar	255		NO	значение атрибута
+Связи estate_attributes с другими таблицами
+
+Field	Links
+estate_attributes.entity_id	estate_buys.estate_buy_id,estate_sells.estate_sell_id,estate_deals.deal_id,promos.id
+estate_attributes.attr_id	estate_attributes_names.id
+estate_attributes_names
+Справочник дополнительных атрибутов
+
+справочник дополнительных (кастомных) атрибутов заявок, объектов, контактов, сделок, акций)
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	id атрибута
+attr_id	int	11		NO	id атрибута
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+attr_title	varchar	128		NO	заголовок атрибута
+attr_type	enum			NO	тип атрибута. Values: ('varchar','text','bool','int','decimal')
+attr_values	text			NO	список возможных значений
+is_multiple	int	1		NO	признак возможности множества значений
+entity	varchar	128		NO	сущность к которой принадлежит атрибут (contacts, estate_buy, estate_sell, estate_deal, promos)
+estate_audience
+Аудитории заявок
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+estate_audience_id	int	11		NO	id тематики
+company_id	int	10		NO	
+created_at	timestamp			NO	timestamp добавления
+updated_at	timestamp			NO	timestamp модификации
+name	varchar	255		NO	название аудитории
+is_static	tinyint	1		NO	признак статичности
+is_archived	tinyint	1		NO	
+estate_count	int	11		NO	заявок в аудитории
+estate_audience_estate
+Заявки в аудиториях
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	10		NO	
+created_at	timestamp			NO	timestamp добавления
+updated_at	timestamp			NO	timestamp модификации
+audience_id	int	11		NO	аудитория
+estate_buy_id	int	11		NO	заявка
+Связи estate_audience_estate с другими таблицами
+
+Field	Links
+estate_audience_estate.audience_id	estate_audience.estate_audience_id
+estate_audience_estate.estate_buy_id	estate_buys.estate_buy_id
+estate_buys
+Заявки
+
+Заявки - основная учетная единица в CRM начиная с этапа Бронь заявка связана с Объектом продажи через Сделку utm данные, характеризующие источник Заявки фиксируются по последнему действию
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	id заявки
+estate_buy_id	int	11		NO	id заявки
+company_id	int	10		NO	
+date_added	date			YES	deprecated дата (Y-m-d) добавления заявки
+created_at	datetime			YES	timestamp добавления заявки
+updated_at	timestamp			YES	timestamp модификации
+date_modified	int	11		NO	deprecated дата изменения
+contacts_id	int	10		YES	id контакта
+contacts_buy_type	tinyint	3		NO	тип контакта, 0 - ФЛ, 1- ЮЛ
+contacts_buy_sex	varchar	1		NO	пол
+contacts_buy_marital_status	varchar	16		YES	семейное положение
+contacts_buy_dob	date			YES	дата рождения
+contacts_buy_geo_country_id	int	11		NO	id страны покупателя
+contacts_buy_geo_country_name	varchar	128		YES	название страны покупателя
+contacts_buy_geo_region_id	int	11		NO	id региона покупателя
+contacts_buy_geo_region_name	varchar	64		YES	название региона покупателя
+contacts_buy_geo_city_id	int	11		NO	id города покупателя
+contacts_buy_geo_city_name	varchar	128		YES	название города покупателя
+contacts_buy_geo_city_short_name	varchar	255		YES	обозначение названия города покупателя
+type	varchar	10		NO	метка типа (buy|rent)
+category	varchar	16		NO	метка категории (flat|garage|storageroom|house|comm)
+status	tinyint	3		NO	id статуса/этапа
+status_custom	int	11		YES	id подстатуса
+status_name	varchar	32		YES	имя статуса deprecated, используйте estate_statuses.status_name
+custom_status_name	varchar	255		YES	имя кастомного подстатуса
+status_reason_id	bigint	11		YES	тип причины перевода в неактивный статус
+is_primary_request	tinyint	1		NO	первичная заявка
+manager_id	int	10		NO	менеджер заявки
+call_center_manager_id	int	11		YES	менеджер колл-центра
+departments_id	int	11		YES	id отдел заявки
+geo_country_name	varchar	128		YES	страна заявки
+geo_region_name	varchar	64		YES	регион заявки
+geo_city_name	varchar	128		YES	город заявки
+estate_sell_id	int	11		YES	id объекта в сделке
+house_id	int	11		YES	id дома объекта
+first_house_interest	bigint	11		YES	id дома - первого интереса заявки
+first_complex_interest	bigint	11		YES	id ЖК (справочное) - первого интереса заявки
+first_meetings_id	bigint	11		YES	id первой встречи по заявке
+first_meetings_house_id	bigint	11		YES	id дома первой встречи-показа
+first_meetings_office_id	bigint	11		YES	id первой встречи в офисе
+channel_type	varchar	32		YES	системное деление источника заявок по типу (www - онлайн реклама|office - самоходы и ручной ввод|agent - интеграция с агентскими каналами|call - звонок|messenger|external - другое)
+channel_name	varchar	255		YES	системное имя источника (сайт, номер телефона, название канала)
+channel_medium	varchar	255		YES	
+utm_source	varchar	255		YES	
+utm_medium	varchar	255		YES	
+utm_campaign	varchar	255		YES	
+utm_content	varchar	255		YES	
+deal_id	int	10		YES	id сделки
+is_payed_reserve	int	1		YES	признак платной брони
+deal_sum	decimal	16	2	YES	сумма сделки
+deal_price	decimal	16	2	YES	цена объекта на момент начала оформления сделки
+deal_area	decimal	10	4	YES	площадь в сделке
+deal_sum_addons	decimal	16	2	YES	сумма допов в сделке
+deal_date	date			YES	дата проведения сделки
+agreement_type	varchar	16		YES	тип сделки (ДДУ, ДУСТ и тд)
+is_concession	int	1		YES	признак договора уступки
+deal_mediator_comission	decimal	16	4	YES	сумма комиссии агенту в сделке (если )
+deal_program_name	varchar	255		YES	программа покупки
+ipoteka_bank_name	varchar	255		YES	имя ипотечного банка в сделке
+ipoteka_rate	decimal	5	3	YES	ставка по ипотеке
+contacts_mediator_id	int	11		YES	id агента. наличие значения однозначно указывает на заявку, пришедшую из агентского канала
+mediator_agency_id	int	11		YES	id агентства
+agent_name	varchar	255		YES	агент заявки/сделки
+agency_name	varchar	255		YES	
+advertising_channel_id	int	11		YES	id рекламного канала
+Связи estate_buys с другими таблицами
+
+Field	Links
+estate_buys.contacts_id	contacts.id
+estate_buys.status	estate_statuses.status_id
+estate_buys.status_reason_id	estate_statuses_reasons.status_reason_id
+estate_buys.manager_id	users.id
+estate_buys.call_center_manager_id	users.id
+estate_buys.departments_id	company_departments.departments_id
+estate_buys.estate_sell_id	estate_sells.estate_sell_id
+estate_buys.house_id	estate_houses.house_id
+estate_buys.first_house_interest	estate_houses.house_id
+estate_buys.first_complex_interest	geo_city_complex.id
+estate_buys.first_meetings_id	estate_meetings.meetings_id
+estate_buys.first_meetings_house_id	estate_meetings.meetings_id
+estate_buys.first_meetings_office_id	estate_meetings.meetings_id
+estate_buys.deal_id	estate_deals.deal_id
+estate_buys.contacts_mediator_id	contacts.id
+estate_buys.mediator_agency_id	contacts.id
+estate_buys.advertising_channel_id	estate_advertising_channels.id
+estate_buys_attr
+Атрибуты заявок (встроенные)
+
+Встроенные атрибуты заявок из перечня: ${filter_by_estate_buy_attr} https://api.macroserver.ru/docs/estate
+
+Field	Type	Length	Decimal	Null	Comments
+id	varchar	19		NO	
+company_id	int	11		NO	
+estate_buy_id	int	11		NO	id объекта
+created_at	datetime			YES	timestamp добавления заявки
+updated_at	timestamp			YES	timestamp модификации заявки
+attr_table	varchar	8		NO	тип данных (int|decimal|varchar)
+attr_name	varchar	64		NO	имя атрибута
+attr_value	varchar	32		NO	значение атрибута
+Используемые атрибуты
+
+Атрибут	Название
+estate_price_range	Цена
+estate_rooms	Комнат
+estate_roomsTo	Комнат до
+geo_complex_set	Жилые комплексы
+estate_area_range	Площадь от-до
+estate_living_new	Новостройка/Вторичка
+Связи estate_buys_attr с другими таблицами
+
+Field	Links
+estate_buys_attr.estate_buy_id	estate_buys.estate_buy_id
+estate_buys_attributes
+Атрибуты заявок/контактов/сделок
+
+атрибуты заявки собираются через кастомные атрибуты самой заявки, контакта и сделки deprecated @see estate_attributes
+
+Field	Type	Length	Decimal	Null	Comments
+id	varchar	160		NO	id записи
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+entity	varchar	128		NO	сущность (contacts, estate_buy, estate_deal)
+entity_id	int	11		NO	id сущности
+attr_id	int	11		NO	id атрибута
+attr_value	varchar	255		NO	значение атрибута
+estate_buys_attributes_names
+Справочник атрибутов
+
+кастомные атрибуты сущностей в недвижимости (заявки, контакта, сделки) deprecated @see estate_attributes_names
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	id атрибута
+attr_id	int	11		NO	id атрибута
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+attr_title	varchar	128		NO	заголово атрибута
+attr_type	enum			NO	тип атрибута. Values: ('varchar','text','bool','int','decimal')
+attr_values	text			NO	список возможных значений
+is_multiple	int	1		NO	признак возможности множества значений
+entity	varchar	128		NO	сущность к которой принадлежит атрибут
+estate_buys_statuses_log
+История изменения статусов заявок
+
+Лог записывается при каждом изменении статуса или подстатуса заявки Типовые кейсы:
+
+постановка брони: (status_from<30,status_to=30)
+постановка платной брони: (status_from=30,status_to=30,is_payed_reserve=1)
+отмена брони: (status_from=30,status_to<30)
+возврат сделки в бронь (не является постановкой брони с точки зрения воронки продаж): (status_from>30,status_to=30)
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	10		NO	
+log_date	timestamp			NO	дата события
+estate_buy_id	int	11		NO	id заявки
+deal_id	int	11		YES	id сделки в момент события
+deal_sum	decimal	16	2	YES	сумма сделки в момент события
+users_id	int	11		YES	пользователь, инициировавший событие
+is_payed_reserve	tinyint	1		NO	признак включения платной брони
+status_from	tinyint	3		NO	исходный статус
+status_from_name	varchar	32		YES	название исходного статуса, deprecated, используйте estate_statuses.status_name
+status_to	tinyint	3		NO	новый статус
+status_to_name	varchar	32		YES	название нового статуса, deprecated, используйте estate_statuses.status_name
+status_custom_from	int	11		YES	исходный подстатус
+status_custom_from_name	varchar	255		YES	название исходного подстатуса
+status_custom_to	int	11		YES	новый кастомный подстатус
+status_custom_to_name	varchar	255		YES	название нового подстатуса
+Связи estate_buys_statuses_log с другими таблицами
+
+Field	Links
+estate_buys_statuses_log.estate_buy_id	estate_buys.id
+estate_buys_statuses_log.deal_id	estate_deals.id
+estate_buys_statuses_log.users_id	users.id
+estate_buys_utm
+UTM заявок
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	id заявки
+estate_buy_id	int	11		NO	id заявки
+company_id	int	10		NO	
+date_added	date			YES	дата (Y-m-d) добавления
+updated_at	timestamp			YES	timestamp модификации
+utm_history_id	int	11		YES	
+channel_type	varchar	32		NO	тип источника заявки (www|office|agent|call)
+channel_name	varchar	255		NO	имя источника (сайт, номер телефона/название канала)
+channel_medium	varchar	255		NO	
+utm_source	varchar	255		NO	
+utm_medium	varchar	255		NO	
+utm_campaign	varchar	255		NO	
+utm_content	varchar	255		NO	
+utm_term	varchar	255		NO	
+utm_keyword	varchar	255		NO	
+utm_block	varchar	32		NO	
+utm_position_type	varchar	32		NO	
+utm_position	varchar	32		NO	
+utm_campaign_id	varchar	32		NO	
+utm_ad_id	varchar	32		NO	
+utm_phrase_id	varchar	32		NO	
+roistat_cid	varchar	128		NO	
+google_cid	varchar	32		NO	
+yandex_cid	varchar	32		NO	
+jivosite_cid	varchar	32		NO	
+carrotquest_cid	varchar	40		NO	
+facebook_id	varchar	32		NO	
+calltouch_id	int	11		YES	
+callkeeper_id	int	11		YES	
+calltracking_vendor_name	varchar	32		YES	
+calltracking_vendor_id	bigint	20		YES	
+campaing_name	varchar	255		NO	
+comagic_campaign_id	int	11		YES	
+Связи estate_buys_utm с другими таблицами
+
+Field	Links
+estate_buys_utm.estate_buy_id	estate_buys.estate_buy_id
+estate_buys_utm_history
+История UTM заявок
+
+При каждом дополнительном внешнем запросе UTM запроса фиксируется в истории
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	id записи в истории
+utm_history_id	int	11		NO	id записи в истории
+estate_buy_id	int	11		NO	id заявки
+company_id	int	10		NO	
+created_at	datetime			YES	timestamp добавления
+updated_at	timestamp			YES	timestamp модификации
+channel_type	varchar	32		NO	тип источника заявки (www|office|agent|call)
+channel_name	varchar	255		NO	имя источника (сайт, номер телефона/название канала)
+channel_medium	varchar	255		NO	
+utm_source	varchar	255		NO	
+utm_medium	varchar	255		NO	
+utm_campaign	varchar	255		NO	
+utm_content	varchar	255		NO	
+utm_term	varchar	255		NO	
+utm_keyword	varchar	255		NO	
+utm_block	varchar	32		NO	
+utm_position_type	varchar	32		NO	
+utm_position	varchar	32		NO	
+utm_campaign_id	varchar	32		NO	
+utm_ad_id	varchar	32		NO	
+utm_phrase_id	varchar	32		NO	
+roistat_cid	varchar	128		NO	
+google_cid	varchar	32		NO	
+yandex_cid	varchar	32		NO	
+jivosite_cid	varchar	32		NO	
+carrotquest_cid	varchar	40		NO	
+facebook_id	varchar	32		NO	
+Связи estate_buys_utm_history с другими таблицами
+
+Field	Links
+estate_buys_utm_history.estate_buy_id	estate_buys.estate_buy_id
+estate_deals
+Сделки по недвижимости
+
+Сделка начинает формироваться начиная с добавления объекта в интересы к заявке Интерес может приобретать разные статусы (см. estate_deals_statuses) У одного объекта может быть несколько интересантов, и одна заявка может иметь интерес к нескольким объектам Начиная с этапа Бронь Сделка получает "прочную" (sell/buy.deal_shows_id) связь с Объектом, исключая возможность на один объект поставить несколько броней Для подсчета завершенных сделок используйте фильтр deal_status = 150 ВАЖНО: Статусы сделок (deal_status) хранятся в справочнике estate_deals_statuses и отличаются от статусов объектов/заявок (estate_statuses).
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	10		NO	
+company_id	int	10		NO	
+deal_id	int	10		NO	id сделки
+deal_status	tinyint	3		NO	статус сделки
+updated_at	timestamp			YES	timestamp модификации
+deal_status_name	varchar	32		YES	имя статуса сделки, deprecated, используйте estate_deals_statuses.status_name
+estate_buy_id	int	10		NO	id заявки в сделке
+estate_sell_id	int	11		NO	id объекта в сделке
+buy_deal_shows_id	int	11		NO	id сделки в заявке (для проверки)
+sell_deal_shows_id	int	11		NO	id сделки в объекте (для проверки)
+house_id	int	11		NO	id дома объекта
+seller_contacts_id	int	11		YES	id продавца
+seller_contacts_name	varchar	255		YES	продавец
+date_finished_plan	date			YES	плановая дата сделки
+date_modified	timestamp			NO	дата изменения
+deal_date	date			YES	Дата проведения сделки является основной учетной характеристикой отнесения сделки к отчетному периоду. Всегда заполнена для проведенных сделок
+deal_date_start	date			YES	дата начала оформления сделки
+deal_date_cancelled	date			YES	дата расторжения заключенной сделки
+deal_date_combined	date			YES	! служебное поле
+deal_manager_id	int	10		NO	менеджер сделки
+deal_co_manager_id	bigint	11		YES	второй менеджер сделки
+estate_buy_date_added	date			YES	дата (Y-m-d) добавления заявки
+reserve_date	date			YES	дата (Y-m-d) окончания брони
+reserve_date_start	date			YES	дата (Y-m-d) постановки брони (актуально для подсчета только по активным броням/сделкам, в остальных случаях следует воспользоваться estate_buys_statuses_log)
+is_payed_reserve	int	1		NO	признак платной брони
+deal_sum	decimal	16	2	NO	сумма сделки
+deal_price	decimal	16	2	NO	цена объекта на момент начала оформления сделки
+deal_area	decimal	10	4	NO	площадь в сделке
+deal_sum_addons	decimal	16	2	NO	сумма допов в сделке
+agreement_type	varchar	16		NO	тип сделки (ДДУ, ДУСТ и тд)
+agreement_number	varchar	64		NO	номер договора (в печатной форме)
+agreement_date	date			YES	дата договора (в печатной форме)
+agreement_template_title	varchar	64		YES	название шаблона договора
+preliminary_date	date			YES	дата предварительного договора
+is_preliminary	int	1		NO	признак наличия предварительного договора
+signed_date	date			YES	дата подписания клиентом
+signed_by_company_date	date			YES	дата подписания компанией
+arles_agreement_date	date			YES	дата договора бронирования
+arles_agreement_num	varchar	64		NO	номер договора бронирования
+agreement_osnova_date	date			YES	дата договора основания
+agreement_verified_date	timestamp			YES	дата проверки договора
+terms_approved_send	timestamp			YES	дата отправки на согласование
+terms_approved_date	timestamp			YES	дата согласования договора
+justice_registration_method	int	11		YES	способ передачи на регистрацию
+justice_date_send_plan	date			YES	плановая дата отправки на регистрацию
+justice_date_send	date			YES	дата отправки на регистрацию
+justice_date_received_plan	date			YES	плановая дата возврата с регистрации
+justice_date_received	date			YES	фактическая дата возврата с регистрации
+justice_date	date			YES	дата регистрации
+justice_number	varchar	256		NO	номер регистрации
+registration_users_id	int	11		YES	ответственный за регистрацию сотрудник
+is_concession	int	1		NO	признак договора уступки
+bulk_deal_id	int	10		YES	id оптовой сделки (для главной = deal_id)
+is_bulk	int	1		NO	признак оптовой сделки
+bulk_deal_sum	decimal	16	2	YES	стоимость оптовой сделки
+bulk_deal_sum_m2	decimal	16	2	YES	стоимость за м2 оптовой сделки
+bulk_deal_area	decimal	10	4	YES	площадь оптовой сделки
+agreement_owner_date	date			YES	дата подписания акта п/п
+deal_program_name	varchar	255		YES	программа покупки
+has_ipoteka	int	1		NO	признак ипотечной сделки
+ipoteka_bank_name	varchar	255		YES	имя ипотечного банка в сделке
+ipoteka_rate	decimal	5	3	YES	ставка по ипотеке
+agreement_city_name	varchar	32		YES	город ипотечного банка
+bank_first_income	decimal	16	2	YES	сумма первоначального взноса
+bank_commission	decimal	16	2	YES	комиссия банка
+bank_agreement_term	int	3		NO	срок кредита, мес
+has_agent	int	1		NO	Признак агентской сделки - основное поле для фильтрации агентских сделок (агентского канала)
+deal_mediator_comission	decimal	16	4	NO	сумма комиссии агенту в сделке
+contacts_mediator_id	int	11		YES	id контата агента
+agent_name	varchar	255		YES	агент заявки/сделки
+agency_name	varchar	255		YES	
+contacts_buy_id	int	10		YES	id главного покупателя
+estate_client_aim	varchar	32		YES	цель приобретения
+mother_capital_cert_sum	decimal	16	4	YES	сумма материнского капитала
+contacts_buy_type	tinyint	3		YES	тип контакта, 0 - ФЛ, 1- ЮЛ
+contacts_buy_sex	varchar	1		NO	пол
+contacts_buy_marital_status	varchar	16		YES	семейное положение
+contacts_buy_dob	date			YES	дата рождения
+deal_contacts_count	int	1		YES	участников в сделке
+status	tinyint	3		NO	id статуса заявки
+status_custom	int	11		YES	id подстатуса заявки
+custom_status_name	varchar	255		YES	имя кастомного подстатуса заявки
+is_primary_request	tinyint	1		NO	первичная заявка
+manager_id	int	10		NO	менеджер заявки
+departments_id	int	11		YES	id отдела заявки
+finances_income	decimal	16	2	YES	поступления по графику сделки
+finances_income_mortgage	decimal	16	2	YES	поступления ипотечных платежей по графику сделки
+finances_income_reserved	decimal	16	2	YES	ожидаемые поступления по графику сделки
+finances_income_reserved_mortgage	decimal	16	2	YES	ожидаемые поступления по графику сделки ипотечных платежей
+finances_other_income	decimal	16	2	YES	другие поступления по сделке
+finances_other_income_reserved	decimal	16	2	YES	другие ожидаемые поступления по сделке
+finances_over_deal_sum	decimal	16	2	YES	поступления по сделке сверх суммы договора
+finances_over_deal_sum_reserved	decimal	16	2	YES	ожидаемые поступления по сделке сверх суммы договора
+finances_income_date_first	timestamp			YES	дата первого пришедшего поступления
+finances_income_date_last	timestamp			YES	дата последнего пришедшего поступления
+first_meetings_id	int	11		YES	! deprecated, see estate_buys
+first_meetings_house_id	int	11		YES	! deprecated, see estate_buys
+first_meetings_office_id	int	11		YES	! deprecated, see estate_buys
+channel_type	varchar	32		YES	! deprecated, see estate_buys
+channel_name	varchar	255		YES	! deprecated, see estate_buys
+channel_medium	varchar	255		YES	! deprecated, see estate_buys
+utm_source	varchar	255		YES	! deprecated, see estate_buys
+utm_medium	varchar	255		YES	! deprecated, see estate_buys
+utm_campaign	varchar	255		YES	! deprecated, see estate_buys
+utm_content	varchar	255		YES	! deprecated, see estate_buys
+Связи estate_deals с другими таблицами
+
+Field	Links
+estate_deals.deal_status	estate_deals_statuses.status_id
+estate_deals.estate_buy_id	estate_buys.estate_buy_id
+estate_deals.estate_sell_id	estate_sells.estate_sell_id
+estate_deals.house_id	estate_houses.house_id
+estate_deals.seller_contacts_id	contacts.id
+estate_deals.deal_manager_id	users.id
+estate_deals.deal_co_manager_id	users.id
+estate_deals.contacts_mediator_id	contacts.contacts_id
+estate_deals.contacts_buy_id	contacts.contacts_id
+estate_deals.status	estate_statuses.status_id
+estate_deals.manager_id	users.id
+estate_deals.departments_id	company_departments.departments_id
+estate_deals_addons
+Наценки в сделке
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	id наценки в сделке
+company_id	int	10		NO	
+deal_id	int	10		NO	id сделки
+deal_date_combined	date			YES	! служебное поле
+updated_at	timestamp			YES	timestamp модификации
+addon_name	varchar	255		NO	имя наценки
+addon_price_default	decimal	16	2	NO	величина наценки по-умолчанию
+addon_price	decimal	16	2	NO	величина наценки в сделке
+Связи estate_deals_addons с другими таблицами
+
+Field	Links
+estate_deals_addons.deal_id	estate_deals.deal_id
+estate_deals_contacts
+Контакты в сделках @deprecated
+
+Для контактов ограничена передача персональных данных Для включения отображения ПД - обратитесь в службу сопровождения Внимание! Данная таблица будет изменена в ближайшее время. Не используйте ее в своих проектах. Вместо нее используйте estate_deals_participants + contacts deprecated @see estate_deals_participants, contacts
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	10		YES	
+date_added	date			YES	дата (Y-m-d) добавления контакта deprecated
+date_modified	datetime			YES	дата (Y-m-d H:i:s) модификации контакта deprecated
+created_at	timestamp			NO	дата (Timestamp) добавления контакта
+updated_at	timestamp			YES	дата (Timestamp) изменения контакта
+contacts_buy_type	tinyint	3		NO	тип контакта, 0 - ФЛ, 1- ЮЛ
+contacts_buy_sex	varchar	1		NO	пол
+contacts_buy_marital_status	varchar	16		YES	семейное положение
+contacts_buy_dob	date			YES	дата рождения
+contacts_buy_name	varchar	255		NO	ФИО/название ЮЛ
+name_last	varchar	32		NO	Фамилия
+name_first	varchar	32		NO	Имя
+name_middle	varchar	32		NO	Отчество
+contacts_buy_phones	varchar	255		NO	
+contacts_buy_emails	varchar	255		NO	
+passport_bithplace	varchar	100		NO	место рождения
+passport_address	varchar	255		NO	
+comm_inn	varchar	12		NO	ИНН ЮЛ
+comm_kpp	varchar	9		NO	КПП ЮЛ
+fl_inn	varchar	14		NO	ИНН ФЛ
+roles_set	varchar	255		NO	Роли контакта
+estate_deals_discounts
+Корректировки цены, примененные к сделке
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	id корректировки
+company_id	int	10		NO	
+deal_id	int	10		NO	id сделки
+updated_at	timestamp			NO	timestamp модификации
+deal_date_combined	varchar	11		YES	! служебное поле
+promo_id	int	11		YES	id акции
+type	enum			NO	discount | increase. Values: ('discount','drop','increase','restoration','instalment_increase')
+amount	decimal	16	2	NO	сумма корректировки
+rule	enum			NO	правило корректировки. Values: ('discount','discount_m2','discount_none')
+rule_type	enum			NO	способ корректировки. Values: ('cash','percent')
+rule_value	decimal	16	2	NO	
+comment	varchar	255		YES	
+discount_type_id	int	11		YES	
+discount_type_title	varchar	255		YES	
+discount_type	varchar	20		YES	тип подтипа корректировки
+Связи estate_deals_discounts с другими таблицами
+
+Field	Links
+estate_deals_discounts.deal_id	estate_deals.deal_id
+estate_deals_discounts.promo_id	promos.promo_id
+estate_deals_docs
+Дополнительные документы по сделке
+
+Дополнительные документы, прикрепляемые к сделке с недвижимостью
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	10		NO	
+updated_at	timestamp			YES	дата обновления записи
+deal_id	int	11		NO	id сделки
+document_type	varchar	32		NO	тип документа
+document_type_name	varchar	64		YES	наименование типа документа
+users_id	int	11		NO	пользователь, добавивший документ
+document_date	date			NO	дата документа
+document_number	varchar	64		NO	номер документа
+registration_number	varchar	64		NO	рег.номер документа
+date_registration	date			NO	дата регистрации документа
+prev_area	decimal	16	2	YES	предыдущая площадь сделки
+prev_summa	decimal	16	2	NO	предыдущая сумма сделки
+document_summa	decimal	16	2	NO	сумма по документу
+document_area	decimal	16	2	YES	площадь по документу
+has_file	int	1		NO	признак наличия подгруженного файла
+Связи estate_deals_docs с другими таблицами
+
+Field	Links
+estate_deals_docs.deal_id	estate_deals.deal_id
+estate_deals_docs.users_id	users.id
+estate_deals_participants
+Участники сделок с недвижимостью
+
+В таблице содержится реестр контактов и их ролей в сделках По одной сделке может быть несколько контактов Один контакт может иметь только одну роль в рамках сделки
+
+Field	Type	Length	Decimal	Null	Comments
+id	varchar	22		NO	
+contacts_id	int	11		NO	id контакта
+deal_id	int	10		NO	id сделки
+company_id	int	10		NO	компания сделки (не контакта!)
+deal_date_combined	date			YES	! служебное поле
+updated_at	timestamp			YES	
+deal_role	varchar	32		YES	роль участника сделки (buyer_main - главный покупатель, остальное в справочнике)
+contacts_buy_portion	varchar	8		YES	доля покупателя
+responsible_contacts_id	int	11		YES	ответственное лицо
+Типы ролей
+
+ID	Роль
+buyer	Покупатель
+relative	Родственник
+parent	Родитель
+child	Ребенок
+agent	Представитель
+jurist	Юрист
+reserve	Бронь
+seller	Продавец
+referrer	Рекомендатель
+payer	Плательщик
+Связи estate_deals_participants с другими таблицами
+
+Field	Links
+estate_deals_participants.contacts_id	contacts.contacts_id
+estate_deals_participants.deal_id	estate_deals.deal_id
+estate_deals_participants.responsible_contacts_id	contacts.contacts_id
+estate_deals_statuses
+Статусы сделок
+
+Field	Type	Length	Decimal	Null	Comments
+status_id	int	1		NO	
+status_name	varchar	32		NO	
+Используемые статусы
+
+ID	Название
+5	Не определён
+15	Интересовался
+10	Показ
+20	Варианты отправлены
+103	Не понравилось
+101	Понравилось
+105	Бронь
+110	Сделка в работе
+150	Сделка проведена
+140	Сделка отменена
+estate_houses
+Дома
+
+Дома/строения компании Дома сгруппированы в Группу домов В состав дома входят объекты (ассортимент), см estate_sells
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	id дома
+house_id	int	11		NO	id дома
+company_id	int	10		NO	
+updated_at	timestamp			YES	timestamp модификации
+status	tinyint	3		NO	статус дома
+complex_id	int	11		YES	id группы домов
+complex_name	varchar	255		YES	имя группы домов
+house_category	varchar	16		NO	категория дома (apphouse = МКД (многоквартирные дома), cottages = Группа коттеджей/таунхаусов, parking = Паркинги/машиноместа, landgroup = Земельные участки, building = Коммерческая недвижимость)
+geo_city_complex_id	int	11		YES	id ЖК (справочник)
+buildState	varchar	1000		YES	состояние проекта (project=Проект,unfinished=Идет строительство,built=Дом построен, но не сдан,hand-over=Дом сдан в эксплуатацию)
+inServiceState	int	11		YES	признак ввода в эксплуатацию
+inServiceDate	int	11		YES	дата ввода в эксплуатацию
+inServiceMonth	int	11		YES	месяц ввода в эксплуатацию
+inServiceQuartal	int	11		YES	квартал ввода в эксплуатацию
+inServiceYear	int	11		YES	год ввода в эксплуатацию
+group_sellStart	date			YES	дата начала продаж
+public_house_name	varchar	1000		YES	публичное имя дома
+floors_in_house	int	11		YES	этажность
+estate_house_code	varchar	1000		YES	код дома
+estate_group_code	varchar	1000		YES	код группы
+estate_external_uuid	varchar	1000		YES	связь с внешним UUID
+geo_country_name	varchar	128		YES	адрес дома: страна
+geo_region_name	varchar	64		YES	адрес дома: регион
+geo_city_name	varchar	128		YES	адрес дома: город
+geo_city_short_name	varchar	255		YES	адрес дома: обозначение города
+geo_street_name	varchar	255		YES	адрес дома: улица
+geo_street_short_name	varchar	32		YES	адрес дома: обозначение улицы
+geo_house	varchar	1000		YES	адрес дома: номер
+geo_building	varchar	1000		YES	адрес дома: строение
+geo_korpus	varchar	1000		YES	адрес дома: корпус
+geo_block	varchar	1000		YES	адрес дома: секция
+geo_quarter	varchar	1000		YES	адрес дома: квартал
+estate_buildingQueue	varchar	1000		YES	Очередь стр-ва
+seller_id	int	10		YES	id продавца
+seller_name	varchar	255		YES	продавец (будет удалено, рекомендовано пользоваться contacts)
+name	varchar	255		NO	имя дома
+Связи estate_houses с другими таблицами
+
+Field	Links
+estate_houses.geo_city_complex_id	geo_city_complex.geo_complex_id
+estate_houses.seller_id	contacts.contacts_id
+estate_houses_price_stat
+Статистика средней стоимость объектов по домам
+
+Статистика собирается каждую неделю
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	10		NO	
+house_id	int	11		NO	id дома
+month_stat_date	date			NO	дата фиксации
+category	varchar	16		NO	категория дома
+flat_class	varchar	32		NO	класс объектов
+avg_price	int	11		NO	средняя цена объектов
+avg_price_m2	int	11		NO	средняя цена за м² объектов
+Связи estate_houses_price_stat с другими таблицами
+
+Field	Links
+estate_houses_price_stat.house_id	estate_houses.house_id
+estate_meetings
+Отчеты по встречам
+
+Встречи фиксируются отчетом о встрече
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+meetings_id	int	11		NO	id встречи
+company_id	int	10		NO	
+updated_at	timestamp			YES	timestamp модификации
+estate_buy_id	int	11		NO	id заявки
+contacts_id	int	11		YES	id контакта с которым проводилась встреча
+users_id	int	11		NO	id менеджера, проводившего встречу
+date_added	timestamp			NO	дата добавления отчета по встрече
+meeting_date	date			YES	дата учета встречи
+meeting_type	varchar	16		NO	тип встречи (устаревшее): офис/объект, deprecated
+meeting_type_place	varchar	16		YES	место встречи: офис (meeting)/объект(meeting_house)
+meeting_type_name	varchar	48		YES	название места встречи
+complex_id	int	11		YES	id группы домов
+house_id	int	11		NO	id дома встречи
+no_meeting	int	1		YES	признак несостоявшейся встречи
+is_first_meeting	int	1		NO	признак первой встречи
+is_last_meeting	int	1		NO	признак последней встречи
+Связи estate_meetings с другими таблицами
+
+Field	Links
+estate_meetings.estate_buy_id	estate_buys.estate_buy_id
+estate_meetings.contacts_id	contacts.contacts_id
+estate_meetings.users_id	users.id
+estate_meetings.complex_id	estate_houses.complex_id
+estate_meetings.house_id	estate_houses.house_id
+estate_mortgage
+Заявки на ипотеку
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+mortgage_id	int	11		NO	id встречи
+company_id	int	11		NO	
+created_at	timestamp			NO	timestamp создания
+updated_at	timestamp			NO	timestamp модификации
+estate_buy_id	int	11		YES	id связанной заявки на покупку
+contacts_id	int	11		NO	id главного контакта заявки
+users_id	int	11		NO	ипотечный брокер
+amount	decimal	13	2	YES	запрошенная сумма
+term	smallint	6		YES	запрошенный срок
+percent	decimal	13	2	YES	ожидаемая ставка
+status	tinyint	3		NO	код статуса заявки
+status_name	varchar	32		YES	имя статуса
+approved_amount	decimal	13	2	YES	одобренная сумма
+approved_percent	decimal	13	2	YES	одобренная ставка
+approved_term	smallint	6		YES	одобренный срок
+status_changed_at	timestamp			YES	дата одобрения
+bank_name	varchar	255		YES	банк, одобривший заявку
+Связи estate_mortgage с другими таблицами
+
+Field	Links
+estate_mortgage.estate_buy_id	estate_buys.estate_buy_id
+estate_mortgage.contacts_id	contacts.contacts_id
+estate_mortgage.users_id	users.id
+estate_promos
+Акции на объектах
+
+Реестр объектов и подходящих к ним акций
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	10		NO	
+promo_id	int	11		NO	акция
+estate_sell_id	int	11		NO	объект
+price	decimal	16	2	YES	Цена объекта по данной акции
+Связи estate_promos с другими таблицами
+
+Field	Links
+estate_promos.estate_sell_id	estate_sells.estate_sell_id
+estate_restoration
+Виды отделки
+
+Виды отделки
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	11		NO	
+updated_at	timestamp			NO	
+name	varchar	255		NO	название отделки
+description	text			YES	описание отделки
+is_archived	tinyint	1		NO	в архиве
+estate_sales_plans
+Планы продаж
+
+Планирование продаж происходит одновременно в разных видах (представлениях/срезах), Каждый план характеризуется своим деревом (уровнями) определяющих характеристик плана (жк/дом/менеджер/категория/отдел и тд)
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+sales_plan_id	int	11		NO	
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+title	varchar	255		NO	название плана
+levels	text			NO	используемые уровни (в порядке иерархии)
+indicators	text			NO	используемые метрики
+period	varchar	255		NO	период планирования
+is_independent	tinyint	1		NO	признак независимости плана
+estate_sales_plans_metrics
+Показатели планов продаж
+
+В данной таблице выводятся метрики планов (суммы/площади/штуки и т.д.) в разрезе каждого плана продаж. Все пересекающиеся виды планов с одинаковыми наборами определяющих характеристик (например пересечение менеджер-ЖК и ЖК-менеджер) физически хранятся в одной записи для синхронизации разных планов между собой. Поскольку каждый план формирует свое представление (см estate_sales_plans), содержащее разные комбинации вложенности определяющих характеристик, то в данной таблице одна запись, хранящая метрики, может быть продублирована в нескольких планах. Это помогает однозначено определять набор заданных метрик для каждого плана. Исключение составляют независимые планы продаж, показатели которых не появляются в других планах.
+
+Field	Type	Length	Decimal	Null	Comments
+id	varchar	23		NO	id набора данных
+metrics_id	int	11		NO	id записи метрики
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+plan_id	int	11		NO	id плана
+tree_group_levels	varchar	255		NO	уровень среза метрики
+plan_date	date			YES	дата плана %Y-%m-15
+year	int	4		NO	год
+quarter	int	2		YES	квартал
+month	int	2		YES	месяц
+complex_id	int	11		YES	группа домов
+house_id	int	11		YES	дом
+manager_id	int	11		YES	менеджер
+category	varchar	30		YES	категория квартир
+rooms	int	2		YES	комнатность
+is_studio	tinyint	1		YES	признак студии
+departments_id	int	11		YES	отдел
+estate_class	varchar	30		YES	класс квартиры
+deal_programs	int	11		YES	программа покупки
+estate_is_mediator	tinyint	1		NO	признак посредника
+finances_income	decimal	16	2	YES	Сумма привлеченных денег
+price_m2	decimal	16	2	YES	стоимость за м2
+quantity	decimal	16	2	YES	Сделок, шт
+sum	decimal	16	2	YES	Сумма продаж
+area	decimal	16	2	YES	Объем продаж, м2
+leads	int	16		YES	Количество заявок
+target_leads	int	16		YES	Количество целевых заявок
+meetings	int	16		YES	Количество встреч
+reserves	int	16		YES	Количество броней
+payed_reserves	int	16		YES	Количество платных броней
+deal_price	decimal	16	2	YES	Плановая цена сделки
+provision_method	varchar	30		YES	Способ обеспечения
+Связи estate_sales_plans_metrics с другими таблицами
+
+Field	Links
+estate_sales_plans_metrics.plan_id	estate_sales_plans.sales_plan_id
+estate_sales_plans_metrics.complex_id	estate_houses.complex_id
+estate_sales_plans_metrics.house_id	estate_houses.house_id
+estate_sales_plans_metrics.manager_id	users.id
+estate_sales_plans_metrics.departments_id	company_departments.departments_id
+estate_sells
+Объекты
+
+Объект, является главной учетной сущностью ассортимента Объекты группируются в Дома (см estate_houses) Объект хранит в себе все аттрибуты объекта, цену, параметры площади и прочее На этапе бронь+ Объект объединяется с Заявкой (estate_buys) в Сделке (estate_deals) Объект может быть только в одной активной сделке и иметь только один график платежей Основные этапы объекта: 20 - в продаже, 32|52 - снято с продажи. Остальные сценарии лучше анализировать через сделку объекта (deal_id). У объекта не может быть статуса "Сделка расторгнута", поскольку квартиры по которым расторгается сделка возвращаются в продажу.
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+estate_sell_id	int	11		NO	
+company_id	int	10		NO	
+date_modified	int	11		NO	дата изменения
+updated_at	timestamp			YES	timestamp модификации
+activity	enum			NO	активность объекта (sell - продажа, rent - сдача в аренду). Values: ('rate','rent','sell','lease','buylease','sellrent','buy')
+estate_sell_type	varchar	10		NO	метка типа (living|comm - только объекты с категорией comm)
+estate_sell_category	varchar	16		NO	категория объекта недвижимости (flat - квартира (в т.ч. студия и апартаменты)|garage - гараж/парковка|storageroom - кладовая|house - дом/таунхауз/ИЖС|comm - коммерческая недвижимость)
+estate_sell_status	tinyint	3		NO	id статуса/этапа объекта в воронке продаж
+estate_sell_status_name	varchar	32		YES	имя статуса, deprecated, используйте estate_statuses.status_name
+house_id	int	11		NO	id дома
+source_parent_id	int	11		YES	id дома для клонированной вторички
+estate_code	varchar	1000		YES	код объекта
+seller_contacts_id	int	10		YES	id продавца
+seller_contacts_name	varchar	255		YES	продавец (deprecated, рекомендовано пользоваться contacts)
+plans_name	varchar	64		YES	название планировки
+plans_group	varchar	32		YES	название группы планировок
+flatClass	varchar	32		YES	класс квартиры
+estate_studia	int	11		YES	признак квартиры-студии (обычно при этом estate_rooms=1, но не обязательно)
+estate_apartments	int	11		YES	признак квартиры-апартаментов
+estate_rooms	int	11		YES	комнатность (Значение NULL может встречаться для объектов без комнат (кладовые, машиноместа) или для студий или при незавершенном заполнении данных)
+geo_house_entrance	int	11		YES	подъезд/секция
+estate_floor	int	11		YES	этаж
+estate_riser	int	11		YES	номер на площадке (стояк)
+geo_flatnum	varchar	32		YES	номер объекта
+geo_flatnum_postoffice	varchar	32		YES	почтовый номер объекта
+estate_external_uuid	varchar	1000		YES	связь с внешним UUID
+estate_area	decimal	16	4	YES	площадь объекта
+estate_price	decimal	16	4	YES	цена объекта
+estate_price_action	decimal	16	4	YES	Цена по спецпредложению
+estate_price_m2	decimal	16	4	YES	стоимость за м2
+estate_areaBti	decimal	16	4	YES	площадь по БТИ
+estate_areaBti_koef	decimal	16	4	YES	площадь по БТИ (коэф.)
+estate_area_inside	decimal	16	4	YES	Площадь без ЛП
+estate_areaBti_inside	decimal	16	4	YES	Площадь БТИ без ЛП
+estate_areaBti_terrace	decimal	16	4	YES	Площадь террасы БТИ, м²
+estate_restoration_id	int	11		YES	id вида отделки
+estate_restoration	varchar	255		YES	название вида отделки deprecated
+estate_restoration_price	decimal	16	4	YES	стоимость отделки
+estate_sale_type	varchar	1000		YES	Тип продажи
+estate_dealAreaBeforeBtiRecalc	decimal	16	4	YES	Площадь до перерасчета по обмерам БТИ
+special_notes	varchar	255		NO	Служебные отметки
+deal_id	int	10		YES	id сделки
+Связи estate_sells с другими таблицами
+
+Field	Links
+estate_sells.house_id	estate_houses.house_id
+estate_sells.source_parent_id	estate_houses.house_id
+estate_sells.seller_contacts_id	contacts.contacts_id
+estate_sells.estate_restoration_id	estate_restoration.id
+estate_sells.deal_id	estate_deals.deal_id
+estate_sells_attr
+Атрибуты объектов (встроенные)
+
+Встроенные атрибуты объектов: ${filter_by_estate_buy_attr} https://api.macroserver.ru/docs/estate
+
+Field	Type	Length	Decimal	Null	Comments
+id	varchar	19		NO	
+company_id	int	11		NO	
+estate_sell_id	int	11		NO	id объекта
+updated_at	timestamp			YES	timestamp модификации
+attr_table	varchar	8		NO	тип данных (int|decimal|varchar)
+attr_name	varchar	64		NO	имя атрибута
+attr_value	varchar	32		NO	значение атрибута
+Используемые атрибуты
+
+Атрибут	Название
+estate_area_balcony	Площадь балкона
+estate_area_balcony_2	Площадь балкона 2
+estate_area_loggia	Площадь лоджии
+estate_area_loggia_2	Площадь лоджии 2
+estate_area_loggia_3	Площадь лоджии 3
+estate_area_loggia_custom	Площадь лоджии (произвольная)
+estate_area_loggia_custom2	Площадь лоджии 2 (произвольная)
+estate_area_loggia_custom3	Площадь лоджии 3 (произвольная)
+estate_areaBti_loggia	Площадь лоджии БТИ
+estate_areaBti_balcony	Площадь балкона БТИ
+estate_areaBti_terrace	Площадь террасы БТИ, м²
+estate_area_balcony_custom	Площадь балкона (произвольная)
+estate_area_balcony_custom2	Площадь балкона 2 (произвольная)
+estate_area_kitchen	Площадь кухни
+estate_area_reduced	Приведенная площадь
+estate_area_living	Площадь жилая
+estate_has_warm_loggia	Теплая лоджия
+estate_living_balcony	Балкон
+estate_living_loggiaCount	Кол-во лоджий
+estate_living_balcony	Балкон
+estate_living_balconyCount	Кол-во балконов
+estate_has_terrace	Есть терраса
+estate_area_terrace	Площадь террасы
+estate_area_terrace_2	Площадь террасы 2
+estate_area_terrace_custom	Площадь террасы (произвольная)
+estate_area_terrace_custom2	Площадь террасы 2 (произвольная)
+estate_living_sanuzel	Санузел
+estate_living_sanuzelCounts	Кол-во санузлов
+estate_area_sanuzel	Площадь санузла
+estate_area_sanuzel_2	Площадь санузла 2
+estate_area_sanuzel_3	Площадь санузла 3
+estate_area_sanuzel_4	Площадь санузла 4
+estate_condition	Состояние
+estate_group_buildState	Состояние строительства
+estate_living_new	Новостройка/Вторичка
+Связи estate_sells_attr с другими таблицами
+
+Field	Links
+estate_sells_attr.estate_sell_id	estate_sells.estate_sell_id
+estate_sells_price_min_stat
+Статистика минимально возможных цен объектов
+
+Статистика минимально возможных цен объектов с учетом актуальных акций на момент фактировки Только объекты в домах
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	10		NO	
+estate_sell_id	int	11		NO	id объекта
+calculation_date	date			NO	Дата за которую расчитана минимальная цена
+price	decimal	16	2	YES	Минимально возможная цена объекта с учетом актуальных акций
+area	decimal	10	4	YES	Площадь объекта на момент фактировки цены
+Связи estate_sells_price_min_stat с другими таблицами
+
+Field	Links
+estate_sells_price_min_stat.estate_sell_id	estate_sells.estate_sell_id
+estate_sells_price_stat
+Статистика цен объектов
+
+Статистика собирается в момент обновления стоимости объекта Дополнительно раз в день собираются текущие стоимости объектов и затем, раз в неделю из статистики удаляются по каждому объекту недвижимости одинаковые (по стоимости) записи, расположенные последовательно от первой записи в месяце Распространяется только на объекты в домах
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	16		NO	
+company_id	int	10		NO	
+estate_sell_id	int	11		NO	id объекта
+updated_at	timestamp			NO	
+date_stat	date			NO	дата замера
+price	int	11		NO	цена общая
+price_m2	int	11		NO	цена за м²
+Связи estate_sells_price_stat с другими таблицами
+
+Field	Links
+estate_sells_price_stat.estate_sell_id	estate_sells.estate_sell_id
+estate_sells_statuses_log
+История изменения статусов объектов
+
+Лог записывается при каждом изменении статуса объекта Типовые кейсы:
+
+постановка брони: (status_from<30,status_to=30)
+постановка платной брони: (status_from=30,status_to=30,is_payed_reserve=1)
+отмена брони: (status_from=30,status_to<30)
+возврат сделки в бронь (не является постановкой брони с точки зрения воронки продаж): (status_from>30,status_to=30)
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	10		NO	
+log_date	timestamp			NO	дата события
+estate_sell_id	int	11		NO	id объекта
+deal_id	int	11		YES	id сделки в момент события
+deal_sum	decimal	16	2	YES	сумма сделки в момент события
+is_payed_reserve	tinyint	1		NO	признак включения платной брони
+status_from	tinyint	3		NO	исходный статус
+status_from_name	varchar	32		YES	название исходного статуса, deprecated, используйте estate_statuses.status_name
+status_to	tinyint	3		NO	новый статус
+status_to_name	varchar	32		YES	название нового статуса, deprecated, используйте estate_statuses.status_name
+Связи estate_sells_statuses_log с другими таблицами
+
+Field	Links
+estate_sells_statuses_log.estate_sell_id	estate_sells.estate_sell_id
+estate_sells_statuses_log.deal_id	estate_deals.deal_id
+estate_statuses
+Статусы объектов/заявок
+
+Field	Type	Length	Decimal	Null	Comments
+status_id	int	1		NO	
+status_name	varchar	32		NO	
+Используемые статусы
+
+ID	Название
+0	Удалено
+1	В архиве
+2	Служ.процесс
+3	Нецелевой
+4	Отказ
+5	Неразобранное
+7	Оценка
+8	Необходим обзвон
+10	Проверка
+15	Отложено
+20	Подбор
+30	Бронь
+32	Маркетинговый резерв
+40	Сделка расторгнута
+50	Сделка в работе
+52	Маркетинговая сделка
+53	Сделка в работе *
+90	Сдано
+100	Сделка проведена
+estate_statuses_reasons
+Типы причин неактивных статусов
+
+типы причин компания формирует самостоятельно заявка, переведенная в один из неактивных статусов (отказ, отложено или нецелевой) как правило хранит поставленную менеджером причину перевода в этот статус
+
+Field	Type	Length	Decimal	Null	Comments
+status_reason_id	int	11		NO	тип причины перевода в неактивный статус
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+type	enum			YES	тип причины. Values: ('giveup','wait','inactive')
+name	varchar	64		NO	причина
+is_archived	tinyint	1		NO	перемещено в архив
+estate_tags
+Теги блока недвижимость
+
+связи записей недвижимости с тегами (многие-ко-многим)
+
+Field	Type	Length	Decimal	Null	Comments
+id	varchar	30		NO	id связи
+company_id	int	11		NO	
+updated_at	timestamp			NO	timestamp модификации
+estate_id	int	11		NO	id объекта/заявки/дома/группы домов
+tags_id	int	11		NO	id тега
+Связи estate_tags с другими таблицами
+
+Field	Links
+estate_tags.estate_id	estate_houses.house_id,estate_buys.estate_buy_id,estate_sells.estate_sell_id
+estate_tags.tags_id	tags.id
+estate_transfer
+Учет передачи ключей
+
+Учет передачи ключей по объекту По каждой передаче может быть несколько осмотров, см estate_transfer_attempts
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	10		NO	
+estate_sell_id	int	11		NO	id объекта
+updated_at	timestamp			YES	timestamp модификации
+transfer_type	varchar	3		NO	признак передачи (out), приемки (in)
+transfer_status	varchar	16		NO	статус передачи (finish - "Нет замечаний"|notices - "Есть замечания"|declined - "Клиент уклонился от осмотра"|"" - "Не передано")
+house_id	int	11		NO	id дома
+plan_date	timestamp			YES	плановая дата передачи (проведения осмотра)
+finish_date	timestamp			YES	фактическая дата передачи (проведения осмотра)
+formal_signed_date	datetime			YES	Дата подписания акта передачи помещения
+attempts_count	mediumint	8		NO	количество проведенных осмотров с покупателем
+out_responsible_id	int	11		YES	ответственный за передачу сотрудник
+Связи estate_transfer с другими таблицами
+
+Field	Links
+estate_transfer.estate_sell_id	estate_sells.estate_sell_id,
+estate_transfer.house_id	estate_houses.house_id
+estate_transfer.out_responsible_id	users.id
+estate_transfer_attempts
+Учет осмотров при передаче ключей
+
+Учет осмотров (попыток передач) объектов
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	10		NO	
+transfer_id	int	11		NO	передача ключей
+attempt_user_id	int	11		NO	
+date_added	timestamp			YES	дата осмотра
+estate_sell_id	int	11		NO	id объекта
+updated_at	timestamp			YES	timestamp модификации
+is_success	int	1		NO	признак удачной передачи
+Связи estate_transfer_attempts с другими таблицами
+
+Field	Links
+estate_transfer_attempts.estate_sell_id	estate_sells.estate_sell_id,
+finances
+Финансовые операции
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	10		NO	
+updated_at	timestamp			YES	timestamp модификации
+status	tinyint	3		NO	
+types_id	int	10		NO	тип операции
+subtypes_id	int	11		NO	подтип операции
+users_id	int	10		NO	инициатор
+manager_id	int	10		NO	менеджер
+respons_manager_id	int	11		YES	менеджер, ответственный за операцию
+date_added	datetime			YES	дата добавления операции
+date_to	datetime			YES	планируемая дата оплаты
+summa	decimal	16	2	NO	сумма операции
+estate_sell_id	int	11		YES	объект (дом или объект в сделке)
+deal_id	int	11		YES	id сделки
+contacts_id	int	10		YES	контрагент операции
+contacts_agreements_id	int	11		NO	контракт (документ)
+inventory_demands_id	int	11		YES	id заявки
+approved_by	int	11		YES	согласовавший сотрудник
+approved_date	timestamp			NO	дата согласования
+accepted_for_payment	int	1		NO	признак акцептования
+accepted_by	int	11		YES	акцептовавший сотрудник
+accepted_date	timestamp			NO	дата акцептования
+accepted_summa	decimal	16	2	YES	акцептованная сумма
+is_burning	int	1		NO	признак горящего платежа
+is_first_payment	tinyint	1		NO	признак первого платежа в графике платежей
+is_over_deal_sum	tinyint	1		NO	признак платежа в графике платежей сверх суммы сделки
+status_name	varchar	16		YES	
+types_name	varchar	64		NO	
+account_in_id	int	10		YES	счет зачисления
+account_out_id	int	10		YES	счет списания
+contact_in_id	int	10		YES	контрагент получатель
+contact_out_id	int	10		YES	контрагент плательщик
+Связи finances с другими таблицами
+
+Field	Links
+finances.types_id	finances_types.id
+finances.subtypes_id	finances_subtypes.id
+finances.users_id	users.id
+finances.manager_id	users.id
+finances.respons_manager_id	users.id
+finances.estate_sell_id	estate_sells.estate_sell_id,estate_houses.house_id
+finances.deal_id	estate_deals.deal_id
+finances.contacts_id	contacts.contacts_id
+finances.inventory_demands_id	inventory_demands.demand_id
+finances.approved_by	users.id
+finances.accepted_by	users.id
+finances.account_in_id	finances_accounts.account_id
+finances.account_out_id	finances_accounts.account_id
+finances.contact_in_id	contacts.contacts_id
+finances.contact_out_id	contacts.contacts_id
+finances_accounts
+Счета финансовые
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	10		NO	
+account_id	int	10		NO	
+company_id	int	10		NO	
+updated_at	timestamp			YES	timestamp модификации
+organization_id	int	11		YES	контакт организации счета
+account_name	varchar	255		NO	
+finances_subtypes
+Подтипы финансовых операций
+
+справочник подтипов финансовых операций
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	10		NO	
+updated_at	timestamp			YES	timestamp модификации
+types_id	int	11		NO	ссылка на тип
+subtype_name	varchar	64		NO	наименование подтипа
+finances_types
+Типы финансовых операций
+
+справочник типов финансовых операций
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	10		NO	
+company_id	int	10		NO	
+updated_at	timestamp			YES	timestamp модификации
+types_name	varchar	64		NO	наименование типа
+geo_city_complex
+Жилые комплексы (справочник)
+
+справочник Жилых Комплексов города обычно синхронизирован со справочником Авито/Циан
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	10		NO	id ЖК (справочник)
+geo_complex_id	int	10		NO	id ЖК (справочник)
+company_id	int	10		NO	
+geo_complex_name	varchar	255		NO	название ЖК (справочно)
+city_name	varchar	128		NO	город
+sort_order	tinyint	4		NO	
+inventory_demands
+Заказы на поставку ТМЦ
+
+Запись в данном наборе является позицией Заказа (demand) со своей историей (принадлежность к заказу, проекту, поставщику, снабженцу, объем поставленный, сумма оплат и тд) Demands (Заказы) является сущностю, хранящей историю и процесс заказа Номенклатур у Поставщика для Проектов на конкретные Работы. Заказы группируют Позиции заказов, где ведется пономенклатурный учет заказанных объемов. После того, как заказ сформирован создаются Движения (inventory). Движение характеризует доставку каждой позиции определенного объема Номенклатуры на Склад от определенного Поставщика. По одной позиции Заказа может быть несколько поставок Номенклатуры позиции, но все обязательно от одного Поставщика, указанного в Заказе.
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	id позиции в заказе
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+demand_item_id	int	11		NO	id позиции в заказе
+demand_id	int	11		NO	id заказе
+date_added	date			YES	дата добавления заказа
+date_status_changed	date			YES	дата последнего изменения статуса заказа
+days_status_changed	int	7		YES	дней с момента последнего изменения статуса заказа
+status	int	1		NO	статус заказа
+status_name	varchar	32		YES	имя статуса заказа
+projects_id	int	11		NO	id строительного проекта (ГПР)
+projects_tasks_id	int	11		YES	id работы в ГПР
+parent_id	int	11		YES	id родительского заказа (в случае разделения заказа)
+contacts_id	int	11		YES	id поставщика (контакт)
+delivery_type	varchar	16		NO	тип поставки
+demander_id	int	11		NO	id инициатора заказа (пользователь)
+supplier_id	int	11		NO	id снабженца (пользователь)
+supplier_contact_id	int	11		YES	id поставщика
+demander_user_name	varchar	255		YES	имя инициатора
+supplier_user_name	varchar	255		YES	имя снабженца
+supplier_contact_name	varchar	255		YES	имя поставщика
+warehouse_id	int	11		YES	id склада на который везут ТМЦ
+item_date_demand	date			YES	запрошенная дата поставки позиции
+item_date_plan	date			YES	плановая дата поставки позиции
+item_date_fact	date			YES	фактическая дата полной поставки позиции
+item_date_received	date			YES	фактическая дата последней поставки
+noms_id	int	11		NO	id номенклатуры из справочника
+item_measure	varchar	32		NO	ед.измерения в позиции заказа
+item_price	decimal	21	9	NO	цена ТМЦ в позиции заказа
+item_quantity	decimal	21	9	NO	количество ТМЦ в позиции заказа
+item_summa	decimal	21	9	NO	стоимость позиции заказа
+item_quantity_income	decimal	43	9	NO	объем поступившего материала по позиции согласно накладным
+item_price_income	decimal	13	0	YES	средняя стоимость поступивших материалов по позиции согласно накладным
+item_quantity_part	decimal	43	9	NO	количество недопоставки в позиции
+item_summa_part	decimal	43	9	NO	сумма недопоставки в позиции
+item_quantity_outcome	decimal	43	9	NO	количество переданного материала из позиции
+item_max_demand_days	int	7		YES	срок исполнения заказа в днях
+item_overdue_days	int	7		YES	количество дней просрочки (от запрошенной даты поставки) открытых исполняемых заказов
+item_overdue_interval	varchar	10		YES	интервал дней просрочки открытых исполняемых заказов
+demand_item_payed_summa	decimal	42	6	NO	доля совершенной оплаты, приходящейся на позицию заказа
+is_expired_approvement	int	1		NO	просрочено согласование заказа
+is_burning	tinyint	1		NO	горящий заказа
+Связи inventory_demands с другими таблицами
+
+Field	Links
+inventory_demands.projects_id	projects.id
+inventory_demands.projects_tasks_id	projects_tasks.projects_tasks_id
+inventory_demands.parent_id	invenory_demands.id
+inventory_demands.contacts_id	contacts.contacts_id
+inventory_demands.demander_id	users.id
+inventory_demands.supplier_id	users.id
+inventory_demands.supplier_contact_id	contacts.contacts_id
+inventory_demands.warehouse_id	inventory_warehouse.warehouse_id
+inventory_demands.noms_id	noms.id
+inventory_noms_top
+ТОП заказываемой номенклатуры
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	11		NO	
+noms_id	int	11		NO	id номенклатуры
+noms_name	varchar	1000		NO	имя часто заказываемой номенклатуры
+demands_count	bigint	21		NO	количество заказов данной номенклатуры
+item_avg_price	decimal	25	13	YES	средняя цена заказа данной номенклатуры
+Связи inventory_noms_top с другими таблицами
+
+Field	Links
+inventory_noms_top.noms_id	noms.id
+inventory_warehouse
+Склады
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+warehouse_id	int	11		NO	id склада
+warehouse_name	varchar	64		NO	
+projects_id	int	11		YES	id проекта
+Связи inventory_warehouse с другими таблицами
+
+Field	Links
+inventory_warehouse.projects_id	projects.id
+inventory_warehouse_stocks
+Остатки на складах
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	позиция заказа, сформировавшего остаток на складе
+company_id	int	11		NO	
+demand_id	int	11		NO	заказ, сформировавший остаток на складе
+demand_date_added	date			YES	дата появления заказа
+warehouse_id	int	11		NO	id склада
+projects_id	int	11		YES	id проекта к которому относится склад
+summa_left	decimal	64	18	YES	стоимость остатка номенклатуры
+task_date_finish_fact	date			YES	фактическая дата закрытия заказа
+task_id	int	11		YES	id работы из ГПР
+noms_id	int	11		NO	id номенклатуры в остатках
+date_received	date			YES	дата передачи номенклатуры на склад
+stocks_days_interval	varchar	11		NO	интервал дней нахождения номенклатуры на складе
+Связи inventory_warehouse_stocks с другими таблицами
+
+Field	Links
+inventory_warehouse_stocks.demand_id	inventory_demands.demand_id
+inventory_warehouse_stocks.warehouse_id	inventory_warehouse.warehouse_id
+inventory_warehouse_stocks.projects_id	projects.id
+inventory_warehouse_stocks.task_id	projects_tasks.projects_tasks_id
+inventory_warehouse_stocks.noms_id	noms.id
+noms
+Номенклатура (справочник)
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	11		NO	
+updated_at	timestamp			NO	timestamp модификации
+noms_name	varchar	1000		NO	имя номенклатуры
+noms_parent_id	int	11		NO	id родительской категории
+type	enum			NO	тип. Values: ('inventory','service','work','machine','equipment','hold')
+code	varchar	32		YES	код
+measure	varchar	32		NO	единица измерения
+category_full_name	char	0		NO	
+Связи noms с другими таблицами
+
+Field	Links
+noms.noms_parent_id	noms_category.id
+noms_category
+Категории номенклатур
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+category_name	varchar	255		NO	имя категории
+category_parent_id	int	11		YES	id родительской категории
+category_type	varchar	16		YES	тип категории
+code	varchar	32		YES	код
+category_full_name	varchar	341		YES	полный путь категории
+Связи noms_category с другими таблицами
+
+Field	Links
+noms_category.category_parent_id	noms_category.id
+projects
+Проекты строительные
+
+Проект является основной учетно/процессной сущностью в структуре проектов Конечным элементом иерархии проектов является проект-график производства работ (ГПР) у которого могут быть работы (projects_tasks)
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+projects_id	int	11		NO	id проекта
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+date_combined	datetime			YES	! техническая дата
+group_id	int	11		YES	id группы проектов
+status	int	1		NO	статус проекта (20 - запущен)
+projects_name	varchar	255		NO	наименование проекта
+projects_name_full	varchar	290		NO	полное наименование проекта
+projects_sort_order	int	3		NO	порядок проекта в группе проектов
+project_date_finish_plan	date			YES	плановая дата завершения проекта
+project_date_finish	date			YES	Дата завершения проекта (ориентир)
+project_date_start	date			YES	Дата начала проекта (ориентир)
+completeness	decimal	5	2	NO	% завершения проекта
+duration_days	int	7		YES	продолжительность проекта
+duration_gone_days	int	7		YES	текущая длительность проекта
+duration_left_days	int	7		YES	дней до окончания проекта по плану
+duration_overdue_days	int	7		YES	дней просрочки окончания проекта
+Связи projects с другими таблицами
+
+Field	Links
+projects.group_id	projects.id
+projects_tasks
+Графики производства работ
+
+Работы являются основной учетно/процессной сущностью графика производства работ Работа является конечным элементом в иерархии групп работ Каждая группа работ может включать в себя работы и другие группы работ Плановые/фактические даты групп работ автоматически высчитываются исходя из границ дат, вложенных в группу работ элементов Расширенный статус работы вычисляется на основании плановых/фактических дат работы и текущей даты и может иметь следующие значения:
+
+Не начато
+Просрочено начало
+Идет
+Просрочено окончание
+Окончено c просрочкой
+Окончено
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+projects_tasks_id	int	11		NO	id работы/группы работ
+company_id	int	11		NO	
+date_combined	datetime			YES	! техническая дата
+updated_at	timestamp			YES	timestamp модификации
+projects_id	int	11		NO	id проекта
+is_group	tinyint	1		NO	признак группы работ
+date_start	date			YES	плановая дата начала работы
+date_finish	date			YES	плановая дата окончания работы
+date_start_fact	date			YES	фактическая дата начала работы
+date_finish_fact	date			YES	фактическая дата окончания работы
+task_start_status	varchar	9		NO	статус начала работы
+task_finish_status	varchar	9		NO	статус окончания работы
+task_status_extended	varchar	24		NO	расширенный статус работы
+failed_start_days	int	7		YES	дней просрочки начала
+failed_finish_days	int	7		YES	дней просрочки окончания
+failed_start_interval	varchar	10		YES	интервал просрочки начала
+failed_finish_interval	varchar	10		YES	интервал просрочки окончания
+finish_delay_interval	varchar	10		YES	Интервалы фактического окончания работ относительно плановых
+is_finish_delay	int	1		NO	Признак просрочки окончания для завершенной работы
+task_name	varchar	255		NO	Название работы/группы работ
+prefix	varchar	32		NO	Префикс
+subname	varchar	255		NO	Комментарий
+sort_order	int	5		NO	Порядок сортировки работы внутри группы
+progress	int	3		NO	Прогресс выполнения работы
+level	int	11		NO	Уровень вложенности
+left_key	int	11		NO	
+right_key	int	11		NO	
+users_inspected	int	11		NO	пользователь, проверивший работы
+date_inspected	date			YES	дата проверки работы
+group_name	varchar	255		YES	имя непосредственно вышележащей группы работ
+full_group_name	varchar	511		YES	путь до работы
+task_full_group_name	varchar	255		YES	путь до работы включая название работы
+date_start_requests_count	bigint	21		NO	количество запросов на пролонгацию даты начала
+date_finish_requests_count	bigint	21		NO	количество запросов на пролонгацию даты окончания
+task_quality_accepted_date	date			YES	дата подтверждения качества работы
+task_quality_accepted_user	varchar	255		YES	пользователь, подтвердивший качество работы
+task_finished_action_date	date			YES	дата постановки фактической даты окончания
+task_finished_action_user	varchar	255		YES	пользователь, поставивший фактическую дату окончания
+is_task_finish_back_action	int	1		NO	
+task_id	int	11		NO	id работы/группы работ (deprecated)
+Связи projects_tasks с другими таблицами
+
+Field	Links
+projects_tasks.projects_tasks_id	projects_tasks.projects_tasks_id
+projects_tasks.projects_id	projects.id
+projects_tasks.users_inspected	users.id
+projects_tasks_agreements
+Контрактные суммы в разрезе работ
+
+Суммы всех позиций из всех контрактов в разрезе работ проектов
+
+Field	Type	Length	Decimal	Null	Comments
+id	varchar	35		NO	
+company_id	int	11		NO	
+agreements_id	int	11		NO	id контракта
+projects_tasks_id	int	11		NO	id работы/группы работ
+created_at	timestamp			YES	дата создания контракта
+updated_at	datetime			YES	дата обновления позиции
+work_summa_agreement	decimal	43	9	YES	Стоимость работ
+inventory_default_summa_agreement	decimal	43	9	YES	Стоимость материалов без типа
+inventory_tolling_summa_agreement	decimal	43	9	YES	Стоимость давальческих материалов
+inventory_contractor_summa_agreement	decimal	43	9	YES	Стоимость материалов подрядчика
+inventory_realization_summa_agreement	decimal	43	9	YES	Стоимость материалов по реализации
+service_summa_agreement	decimal	43	9	YES	Стоимость услуг
+equipment_summa_agreement	decimal	43	9	YES	Стоимость оборудования
+machine_summa_agreement	decimal	43	9	YES	Стоимость маш. мех
+Связи projects_tasks_agreements с другими таблицами
+
+Field	Links
+projects_tasks_agreements.projects_tasks_id	projects_tasks.projects_tasks_id
+projects_tasks_checklists
+Данные стройконтроля
+
+Предписания и дефектовки представляют собой список элементов
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+created_at	date			YES	дата добавления элемента
+projects_id	int	11		NO	проект
+task_id	int	11		NO	работа
+type	enum			NO	тип элемента (notices - Предписания, defects - Дефектовка). Values: ('notices','defects','checklist')
+type_name	varchar	11		NO	название типа элемента
+type_status_name	varchar	22		NO	текущий статус записи
+user_initiator_name	varchar	255		YES	инициатор добавления записи
+user_checked_name	varchar	255		YES	инициатор закрытия записи
+checked_date_to	date			YES	дата действия до
+checked_date	date			YES	дата закрытия записи
+is_notices	int	1		NO	запись - предписание
+is_defects	int	1		NO	запись - дефектовка
+name	varchar	255		NO	наименование записи
+Связи projects_tasks_checklists с другими таблицами
+
+Field	Links
+projects_tasks_checklists.projects_id	projects.id
+projects_tasks_checklists.task_id	projects_tasks.projects_tasks_id
+projects_tasks_estimate
+Сметные суммы в разрезе работ
+
+смета проекта в разрезе работ
+
+Field	Type	Length	Decimal	Null	Comments
+id	varchar	35		NO	
+company_id	int	11		NO	
+smeta_id	int	11		NO	id сметы
+projects_tasks_id	int	11		NO	id работы/группы работ
+updated_at	timestamp			YES	дата обновления сметных показателей
+work_summa_plan	decimal	43	9	YES	Стоимость работ
+inventory_summa_plan	decimal	43	9	YES	Стоимость материалов
+service_summa_plan	decimal	43	9	YES	Стоимость услуг
+equipment_summa_plan	decimal	43	9	YES	Стоимость оборудования
+machine_summa_plan	decimal	43	9	YES	Стоимость маш. мех
+summa_overhead	decimal	43	9	YES	
+summa_profit	decimal	43	9	YES	Сметная прибыль
+summa_temporary	decimal	43	9	YES	Расходы на временные здания и сооружения
+summa_winter	decimal	43	9	YES	Расходы на зимнее удорожания
+summa_other	decimal	43	9	YES	Прочие расходы
+summa_nds	decimal	43	9	YES	НДС
+summa_profit_overhead_from_machine_salary	decimal	43	9	YES	Сметная прибыль и накладные расходы от зарплаты машинистов
+Связи projects_tasks_estimate с другими таблицами
+
+Field	Links
+projects_tasks_estimate.projects_tasks_id	projects_tasks.projects_tasks_id
+projects_tasks_requests
+Запросы на пролонгацию в ГПР
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+projects_id	int	11		NO	id проекта
+projects_tasks_id	int	11		NO	
+status	tinyint	3		NO	статус запроса
+status_name	varchar	32		YES	наименование статуса запроса
+reason	varchar	255		NO	причина отклонения запроса
+date_start	date			NO	плановая дата начала работ на момент запроса
+date_finish	date			NO	плановая дата окончания работ на момент запроса
+date_start_fact	date			YES	фактическая дата начала работ на момент запроса
+date_finish_fact	date			YES	фактическая дата окончания работ на момент запроса
+request_date_start	date			NO	новая запрошенная плановая дата начала
+request_date_finish	date			NO	новая запрошенная плановая дата окончания
+date_approved	date			YES	дата одобрения запроса
+user_approved	varchar	255		YES	пользователь, одобривший запрос
+user_requested	varchar	255		YES	пользователь, открывший запрос
+request_date_created	date			YES	дата создания запроса
+request_days	int	7		YES	длительность текущего открытого запроса
+open_request_days_interval	varchar	5		YES	интервал продолжительности текущего открытого запроса
+closed_request_days_interval	varchar	7		YES	интервал продолжительности одобрения запроса
+task_name	varchar	255		NO	наименование работы
+task_group_name	varchar	255		NO	наименование группы работ
+Связи projects_tasks_requests с другими таблицами
+
+Field	Links
+projects_tasks_requests.projects_id	projects.id
+promos
+Акции
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+promo_id	int	11		NO	id акции
+company_id	int	10		NO	
+updated_at	timestamp			NO	timestamp модификации
+promo_name	varchar	64		NO	имя пользователя
+promo_discount	decimal	16	2	NO	величина скидки
+promo_rule	varchar	16		NO	правило изменения цены (без изменения, цена, цена за м²)
+promo_type	varchar	16		NO	скидка в валюте или процентах
+promo_date_from	date			YES	дата начала акции
+promo_date_to	date			YES	дата окончания акции
+stat
+Вспомогательные данные для построения отчетов
+
+Field	Type	Length	Decimal	Null	Comments
+param_name	varchar	32		NO	
+param_value	varchar	64		NO	
+tags
+Теги компании
+
+полный перечень тегов компании
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	11		NO	
+updated_at	timestamp			YES	timestamp модификации
+tags_name	varchar	64		NO	
+tasks
+Задачи
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	11		NO	
+company_id	int	10		NO	
+updated_at	timestamp			NO	timestamp модификации
+category_id	int	11		YES	
+date_modified	timestamp			NO	дата изменения
+estate_id	int	11		YES	id объекта (дом или квартира) либо id заявки
+contacts_id	int	11		YES	id контакта
+category_name	varchar	64		YES	имя категории
+status	int	6		NO	id статуса
+is_closed	int	1		NO	задача закрыта
+priority	int	1		NO	приоритет задачи
+progress	tinyint	3		NO	прогресс выполнения
+date_added	date			YES	дата добавления задачи
+date_finish	date			YES	плановая дата завершения
+date_finish_time	time			YES	плановое время завершения
+date_finish_fact	date			YES	фактическая дата завершения
+date_finish_fact_time	time			YES	фактическое время завершения
+date_combined	date			YES	!
+hours_plan	decimal	10	2	NO	часов запланировано
+hours_fact	decimal	10	2	NO	часов затрачено
+type	varchar	64		NO	тип задачи
+custom_type	varchar	16		YES	кастомный тип задачи: пример - встреча в офисе (meeting)/объект(meeting_house)
+custom_type_name	varchar	48		YES	название кастомного типа задачи
+title	varchar	255		NO	заголовок задачи
+type_name	varchar	32		YES	
+status_name	varchar	16		YES	
+assigner_id	int	11		YES	id постановщика
+manager_id	int	10		NO	id исполнителя
+assigner_name	varchar	255		YES	постановщик
+manager_name	varchar	255		YES	исполнитель
+Связи tasks с другими таблицами
+
+Field	Links
+tasks.estate_id	estate_buys.estate_buy_id,estate_sells.estate_sell_id,estate_houses.house_id
+tasks.contacts_id	contacts.contacts_id
+tasks.assigner_id	users.id
+tasks.manager_id	users.id
+tasks_tags
+Теги задач
+
+связи задач с тегами (многие-ко-многим)
+
+Field	Type	Length	Decimal	Null	Comments
+id	varchar	29		NO	id связи
+company_id	int	11		NO	
+updated_at	timestamp			NO	timestamp модификации
+tasks_id	int	11		NO	id задачи
+tags_id	int	11		NO	id тега
+Связи tasks_tags с другими таблицами
+
+Field	Links
+tasks_tags.tasks_id	tasks.id
+tasks_tags.tags_id	tags.id
+users
+Пользователи компании
+
+Field	Type	Length	Decimal	Null	Comments
+id	int	10		NO	
+company_id	int	10		YES	
+updated_at	timestamp			NO	timestamp модификации
+users_name	varchar	255		NO	имя пользователя
+departments_id	int	11		YES	id отдела пользователя
+post_title	varchar	255		NO	
+role	varchar	50		NO	роль сотрудника в компании
+is_fired	tinyint	1		NO	признак уволенного сотрудника
+Связи users с другими таблицами
+
+Field	Links
+users.departments_id	company_departments.departments_id

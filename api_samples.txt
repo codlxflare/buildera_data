@@ -1,0 +1,12 @@
+ПРИМЕРЫ ДАННЫХ ИЗ БД (только чтение, для ориентира ИИ; не менять БД):
+По этим примерам видно, какие значения встречаются в полях и в каком формате.
+
+finances.status_name (статусы платежей): К оплате, Отклонено, Проведено
+finances: пример date_to, summa, deal_id: date_to=Mon May 01 2023 14:00:00 GMT+0300 (Moscow Standard Time) summa=6257600.00 deal_id=770471; date_to=Wed May 03 2023 18:48:15 GMT+0300 (Moscow Standard Time) summa=100000.00 deal_id=770484
+estate_buys.channel_name (источники заявок): +7.2162233, +7.3433892400, +7.3519438015, +7.3852556666, +7.4473700001, +7.7077079999, +7.7079001615, +7.7079001712, +7.7475199999, +7.7479001614, +7.7750204416, +7.7750372917, +7.8005500973, +7.8007074569, +7.9025333326, +7.9140001305, +7.9223962570, +7.9241175454, +7.9584983951, +7.9585782472, +7.9587714072, +7.9618450802, 2ГИС, 707, 781136092
+estate_deals.deal_status, deal_date: 5, 103, 105, 110, 140, 150
+estate_deals: пример deal_date: deal_date=Tue Jan 04 2022 00:00:00 GMT+0300 (Moscow Standard Time) deal_status=150; deal_date=Sat Mar 26 2022 00:00:00 GMT+0300 (Moscow Standard Time) deal_status=150
+estate_buys: пример created_at: Mon Apr 03 2023 12:27:59 GMT+0300 (Moscow Standard Time)
+contacts: наличие contacts_buy_name, contacts_buy_phones: есть записи с именами/телефонами
+estate_houses.name / public_house_name: name=ЖК «Capital City» Блок №1; name=ЖК «Capital City» Блок №2
+estate_sells.plans_name, geo_flatnum: plans_name=109 geo_flatnum=2-7-1-1-3; plans_name=003 geo_flatnum=1-1-1-1-1
