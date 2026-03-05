@@ -299,52 +299,93 @@ pm2 restart macrodata-assistant
 
 ---
 
-## Часть 6. Доступ по домену (Nginx, опционально)
+## Часть 6. Домен и HTTPS (Nginx + Let's Encrypt)
 
-Чтобы открывать сайт по домену (например, `https://yourdomain.com`) и не светить порт 3000 наружу:
+Чтобы открывать приложение по домену с сертификатом (например, `https://ваш-домен.ru`).
 
-1. Установите Nginx (если ещё не установлен):
-   ```bash
-   sudo apt install -y nginx
-   ```
+**Перед началом:** укажите A-запись домена на IP вашего сервера в панели регистратора домена. Дождитесь обновления DNS (проверка: `ping ваш-домен.ru`).
 
-2. Создайте конфиг сайта:
-   ```bash
-   sudo nano /etc/nginx/sites-available/macrodata
-   ```
+### Шаг 1. Установка Nginx
 
-   Пример (замените `yourdomain.com` на свой домен):
+```bash
+sudo apt update
+sudo apt install -y nginx
+sudo systemctl enable nginx
+sudo systemctl start nginx
+```
 
-   ```nginx
-   server {
-       listen 80;
-       server_name yourdomain.com;
-       location / {
-           proxy_pass http://127.0.0.1:3000;
-           proxy_http_version 1.1;
-           proxy_set_header Upgrade $http_upgrade;
-           proxy_set_header Connection 'upgrade';
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-           proxy_set_header X-Forwarded-Proto $scheme;
-           proxy_cache_bypass $http_upgrade;
-       }
-   }
-   ```
+### Шаг 2. Конфиг сайта (порт 80)
 
-3. Включите сайт и перезапустите Nginx:
-   ```bash
-   sudo ln -s /etc/nginx/sites-available/macrodata /etc/nginx/sites-enabled/
-   sudo nginx -t
-   sudo systemctl reload nginx
-   ```
+Замените `ВАШ_ДОМЕН` на ваш домен (например, `macrodata.example.com` или `example.ru`).
 
-4. При необходимости настройте SSL (Let's Encrypt):
-   ```bash
-   sudo apt install -y certbot python3-certbot-nginx
-   sudo certbot --nginx -d yourdomain.com
-   ```
+```bash
+sudo nano /etc/nginx/sites-available/macrodata
+```
+
+Вставьте (подставьте свой домен в `server_name`):
+
+```nginx
+server {
+    listen 80;
+    server_name ВАШ_ДОМЕН;
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+```
+
+Сохраните: Ctrl+O, Enter, Ctrl+X.
+
+### Шаг 3. Включение сайта и проверка
+
+```bash
+sudo ln -sf /etc/nginx/sites-available/macrodata /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Откройте в браузере: `http://ВАШ_ДОМЕН` — должна открыться ваша Next.js-страница.
+
+### Шаг 4. Установка SSL-сертификата (Let's Encrypt)
+
+Certbot получит сертификат и автоматически настроит Nginx на HTTPS.
+
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d ВАШ_ДОМЕН
+```
+
+- Введите email для уведомлений от Let's Encrypt.
+- Согласитесь с условиями (Y).
+- При запросе «Redirect HTTP to HTTPS» выберите **2 (Redirect)** — весь трафик пойдёт по HTTPS.
+
+Проверка: откройте `https://ВАШ_ДОМЕН` — должен быть замок в браузере.
+
+### Шаг 5. Автопродление сертификата
+
+Проверка таймера (сертификат продлевается автоматически):
+
+```bash
+sudo systemctl status certbot.timer
+```
+
+При необходимости продлить вручную:
+
+```bash
+sudo certbot renew --dry-run
+```
+
+---
+
+**Итог:** приложение доступно по `https://ВАШ_ДОМЕН`. Порт 3000 снаружи можно закрыть файрволом (доступ только через Nginx на 80/443).
 
 ---
 

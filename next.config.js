@@ -1,7 +1,8 @@
 /** @type {import('next').NextConfig} */
+// Standalone только для Docker (NEXT_STANDALONE=true при сборке). На сервере с PM2 используем next start без standalone.
 const nextConfig = {
   reactStrictMode: true,
-  output: "standalone", // папка .next/standalone для деплоя на сервер / Docker
+  ...(process.env.NEXT_STANDALONE === "true" ? { output: "standalone" } : {}),
 
   // Global security headers applied to every response
   async headers() {

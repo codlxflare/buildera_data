@@ -38,17 +38,26 @@ export function getAvailableWidgetKeys(): WidgetKey[] {
   return [...WIDGET_KEYS];
 }
 
-/** Возвращает [startDate, endDate] для месяца YYYY-MM (endDate — последний день месяца). */
+/** Последний день месяца в локальной дате (февраль = 28 или 29, без таймзоны). */
+function lastDayOfMonth(year: number, month: number): string {
+  const d = new Date(year, month, 0);
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+/** Возвращает [startDate, endDate] для месяца YYYY-MM (endDate — последний день месяца, февраль 28/29). */
 function monthRange(period: string): [string, string] {
   const [y, m] = period.split("-").map(Number);
   if (!y || !m || m < 1 || m > 12) {
     const now = new Date();
     const py = now.getFullYear();
-    const pm = String(now.getMonth() + 1).padStart(2, "0");
-    return [`${py}-${pm}-01`, new Date(py, now.getMonth() + 1, 0).toISOString().slice(0, 10)];
+    const pm = now.getMonth() + 1;
+    return [`${py}-${String(pm).padStart(2, "0")}-01`, lastDayOfMonth(py, pm)];
   }
   const start = `${y}-${String(m).padStart(2, "0")}-01`;
-  const end = new Date(y, m, 0).toISOString().slice(0, 10);
+  const end = lastDayOfMonth(y, m);
   return [start, end];
 }
 
@@ -62,11 +71,11 @@ export async function runDashboardWidget(
     case "summary": {
       // Run each metric independently so one failure doesn't zero out everything
       const result: Record<string, number> = {
-        total_deals: 0, total_deal_amount: 0, total_leads: 0,
+        total_deals: 0, completed_deals: 0, total_deal_amount: 0, total_leads: 0,
         leads_with_deal: 0, total_debt: 0, overdue_debt: 0, active_properties: 0,
       };
 
-      // 1. Deals count (all statuses — to match original behaviour)
+      // 1. Deals count (all statuses) за период
       try {
         const r = await runReadOnlyQuery(
           `SELECT COUNT(*) AS v FROM estate_deals WHERE deal_date IS NOT NULL AND deal_date >= ? AND deal_date < DATE_ADD(?, INTERVAL 1 MONTH)`,
@@ -75,7 +84,16 @@ export async function runDashboardWidget(
         result.total_deals = Number((r[0] as Record<string, unknown>)?.v ?? 0);
       } catch {}
 
-      // 2. Deal amount for completed deals
+      // 2. Завершённые сделки (deal_status = 150) за период
+      try {
+        const r = await runReadOnlyQuery(
+          `SELECT COUNT(*) AS v FROM estate_deals WHERE deal_status = 150 AND deal_date IS NOT NULL AND deal_date >= ? AND deal_date < DATE_ADD(?, INTERVAL 1 MONTH)`,
+          [start, start]
+        );
+        result.completed_deals = Number((r[0] as Record<string, unknown>)?.v ?? 0);
+      } catch {}
+
+      // 3. Deal amount for completed deals
       try {
         const r = await runReadOnlyQuery(
           `SELECT COALESCE(SUM(deal_sum), 0) AS v FROM estate_deals WHERE deal_status = 150 AND deal_date IS NOT NULL AND deal_date >= ? AND deal_date < DATE_ADD(?, INTERVAL 1 MONTH)`,
@@ -84,7 +102,7 @@ export async function runDashboardWidget(
         result.total_deal_amount = Number((r[0] as Record<string, unknown>)?.v ?? 0);
       } catch {}
 
-      // 3. Leads count
+      // 4. Leads count (все заявки за период — одна формула везде)
       try {
         const r = await runReadOnlyQuery(
           `SELECT COUNT(*) AS v FROM estate_buys WHERE created_at >= ? AND created_at < DATE_ADD(?, INTERVAL 1 MONTH)`,
@@ -93,16 +111,20 @@ export async function runDashboardWidget(
         result.total_leads = Number((r[0] as Record<string, unknown>)?.v ?? 0);
       } catch {}
 
-      // 4. Leads with deal
+      // 5. Заявки, по которым в этом периоде есть завершённая сделка (для единого числа «со сделкой» = completed_deals)
       try {
         const r = await runReadOnlyQuery(
-          `SELECT COUNT(*) AS v FROM estate_buys WHERE created_at >= ? AND created_at < DATE_ADD(?, INTERVAL 1 MONTH) AND deal_id IS NOT NULL`,
-          [start, start]
+          `SELECT COUNT(DISTINCT eb.id) AS v
+           FROM estate_buys eb
+           INNER JOIN estate_deals ed ON ed.estate_buy_id = eb.id AND ed.deal_status = 150
+             AND ed.deal_date >= ? AND ed.deal_date < DATE_ADD(?, INTERVAL 1 MONTH)
+           WHERE eb.created_at >= ? AND eb.created_at < DATE_ADD(?, INTERVAL 1 MONTH)`,
+          [start, start, start, start]
         );
         result.leads_with_deal = Number((r[0] as Record<string, unknown>)?.v ?? 0);
       } catch {}
 
-      // 5. Payment schedule total for period
+      // 6. К оплате: суммы по графикам платежей за период (date_to в пределах месяца)
       try {
         const r = await runReadOnlyQuery(
           `SELECT COALESCE(SUM(summa), 0) AS v FROM finances WHERE DATE(date_to) >= ? AND DATE(date_to) <= ? AND deal_id IS NOT NULL`,
@@ -111,7 +133,7 @@ export async function runDashboardWidget(
         result.total_debt = Number((r[0] as Record<string, unknown>)?.v ?? 0);
       } catch {}
 
-      // 6. Overdue payments (past 3 months max to avoid full scan)
+      // 7. Overdue payments (past 3 months max to avoid full scan)
       try {
         const overdueCutoff = new Date(start);
         overdueCutoff.setMonth(overdueCutoff.getMonth() - 3);
@@ -123,7 +145,7 @@ export async function runDashboardWidget(
         result.overdue_debt = Number((r[0] as Record<string, unknown>)?.v ?? 0);
       } catch {}
 
-      // 7. Active properties: status 20 = в продаже (per TABLES_REFERENCE)
+      // 8. Active properties: status 20 = в продаже (per TABLES_REFERENCE)
       try {
         const r = await runReadOnlyQuery(
           `SELECT COUNT(*) AS v FROM estate_sells WHERE estate_sell_status = 20`,
@@ -342,7 +364,7 @@ export async function runDashboardWidget(
           COALESCE(SUM(summa), 0) AS total
         FROM finances
         WHERE deal_id IS NOT NULL
-          AND date_to >= ? AND date_to < DATE_ADD(?, INTERVAL 1 DAY)
+          AND DATE(date_to) >= ? AND DATE(date_to) <= ?
         GROUP BY payment_status
         ORDER BY total DESC
       `;
@@ -355,7 +377,7 @@ export async function runDashboardWidget(
     }
 
     case "leads_funnel": {
-      // estate_meetings PK = meetings_id (TABLES_REFERENCE.md line 884)
+      // Те же границы периода, что и summary: заявки и сделки за месяц
       const sql = `
         SELECT 'Заявки' AS stage, COUNT(*) AS cnt, 1 AS ord
         FROM estate_buys
@@ -367,7 +389,7 @@ export async function runDashboardWidget(
         UNION ALL
         SELECT 'Сделки' AS stage, COUNT(*) AS cnt, 3 AS ord
         FROM estate_deals
-        WHERE deal_date IS NOT NULL
+        WHERE deal_status = 150 AND deal_date IS NOT NULL
           AND deal_date >= ? AND deal_date < DATE_ADD(?, INTERVAL 1 MONTH)
         ORDER BY ord
       `;
@@ -386,17 +408,22 @@ export async function runDashboardWidgets(
 ): Promise<Record<WidgetKey, Record<string, unknown>[]>> {
   const result = {} as Record<WidgetKey, Record<string, unknown>[]>;
   const unique = Array.from(new Set(keys)).filter((k) => WIDGET_KEYS.includes(k));
-  for (const key of unique) {
-    try {
-      const rows = await runDashboardWidget(key, period);
-      (result as Record<string, Record<string, unknown>[]>)[key] = rows;
-      if (rows.length === 0) {
-        console.warn(`[Dashboard] Widget "${key}" returned 0 rows for period=${period}`);
+  const pairs = await Promise.all(
+    unique.map(async (key) => {
+      try {
+        const rows = await runDashboardWidget(key, period);
+        if (rows.length === 0) {
+          console.warn(`[Dashboard] Widget "${key}" returned 0 rows for period=${period}`);
+        }
+        return [key, rows] as const;
+      } catch (err) {
+        console.error(`[Dashboard] Widget "${key}" FAILED for period=${period}:`, err instanceof Error ? err.message : err);
+        return [key, []] as const;
       }
-    } catch (err) {
-      console.error(`[Dashboard] Widget "${key}" FAILED for period=${period}:`, err instanceof Error ? err.message : err);
-      (result as Record<string, Record<string, unknown>[]>)[key] = [];
-    }
+    })
+  );
+  for (const [key, rows] of pairs) {
+    (result as Record<string, Record<string, unknown>[]>)[key] = Array.isArray(rows) ? [...rows] : [];
   }
   return result;
 }

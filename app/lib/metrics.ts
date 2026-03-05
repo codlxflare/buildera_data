@@ -36,7 +36,7 @@ const METRICS: Array<{
     format: (rows) => {
       const r = rows[0];
       if (!r) return null;
-      return { label: "Сумма завершённых сделок, последний месяц", data: { "Сумма, руб.": Number(r?.total ?? 0) } };
+      return { label: "Сумма завершённых сделок, последний месяц", data: { "Сумма, KZT": Number(r?.total ?? 0) } };
     },
   },
   // Завершённые сделки за текущий месяц
@@ -48,7 +48,7 @@ const METRICS: Array<{
       if (!r) return null;
       return {
         label: "Завершённые сделки, текущий месяц",
-        data: { "Количество, шт.": Number(r?.count ?? 0), "Сумма, руб.": Number(r?.total ?? 0) },
+        data: { "Количество, шт.": Number(r?.count ?? 0), "Сумма, KZT": Number(r?.total ?? 0) },
       };
     },
   },
@@ -62,7 +62,7 @@ const METRICS: Array<{
       rows.forEach((r, i) => {
         const name = (r.department_name as string) || `Отдел ${i + 1}`;
         data[`${name}, шт.`] = Number(r?.count ?? 0);
-        data[`${name}, руб.`] = Number(r?.total ?? 0);
+        data[`${name}, KZT`] = Number(r?.total ?? 0);
       });
       return { label: "Завершённые сделки по отделам, последний месяц", data };
     },
@@ -116,7 +116,7 @@ const METRICS: Array<{
       if (!r) return null;
       return {
         label: "Завершённые сделки с начала года",
-        data: { "Количество, шт.": Number(r?.count ?? 0), "Сумма, руб.": Number(r?.total ?? 0) },
+        data: { "Количество, шт.": Number(r?.count ?? 0), "Сумма, KZT": Number(r?.total ?? 0) },
       };
     },
   },
@@ -129,7 +129,7 @@ const METRICS: Array<{
       if (!r) return null;
       return {
         label: "Завершённые сделки, последний квартал",
-        data: { "Количество, шт.": Number(r?.count ?? 0), "Сумма, руб.": Number(r?.total ?? 0) },
+        data: { "Количество, шт.": Number(r?.count ?? 0), "Сумма, KZT": Number(r?.total ?? 0) },
       };
     },
   },
@@ -142,7 +142,7 @@ const METRICS: Array<{
       if (!r) return null;
       return {
         label: "Завершённые сделки, последний месяц",
-        data: { "Количество, шт.": Number(r?.count ?? 0), "Сумма, руб.": Number(r?.total ?? 0) },
+        data: { "Количество, шт.": Number(r?.count ?? 0), "Сумма, KZT": Number(r?.total ?? 0) },
       };
     },
   },
@@ -155,7 +155,7 @@ const METRICS: Array<{
       if (!r) return null;
       return {
         label: "Завершённые сделки, последний месяц",
-        data: { "Количество, шт.": Number(r?.count ?? 0), "Сумма, руб.": Number(r?.total ?? 0) },
+        data: { "Количество, шт.": Number(r?.count ?? 0), "Сумма, KZT": Number(r?.total ?? 0) },
       };
     },
   },
@@ -167,7 +167,7 @@ const METRICS: Array<{
       if (!r) return null;
       return {
         label: "Завершённые сделки, последний месяц",
-        data: { "Количество, шт.": Number(r?.count ?? 0), "Сумма, руб.": Number(r?.total ?? 0) },
+        data: { "Количество, шт.": Number(r?.count ?? 0), "Сумма, KZT": Number(r?.total ?? 0) },
       };
     },
   },

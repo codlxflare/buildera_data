@@ -23,6 +23,7 @@ import { getSqlModel, getFormatModel } from "@/app/lib/chatModels";
 import { buildEconomicalHistory } from "@/app/lib/dialogMemory";
 import { parseReplyBlocks, hasClarifyBlock, parseClarifyBlock } from "@/app/lib/chartSpec";
 import { checkForbiddenExtraction } from "@/app/lib/requestGuard";
+import { randomUUID } from "@/app/lib/uuid";
 import { isAuthConfigured, getSessionFromCookie, verifySessionToken } from "@/app/lib/auth";
 import {
   extractSqlFromReply,
@@ -32,7 +33,7 @@ import {
 import { isDbConfigured } from "@/app/lib/db";
 import { checkRateLimit } from "@/app/lib/rateLimit";
 import { getCached, setCached } from "@/app/lib/responseCache";
-import { debugLog } from "@/app/lib/debugLog";
+import { createRequestLogger } from "@/app/lib/debugLog";
 import { setExport } from "@/app/lib/exportStore";
 import { anonymizeRows, replacePlaceholders, replacePlaceholdersInObject } from "@/app/lib/anonymize";
 
@@ -67,13 +68,35 @@ function stripTablesFromAssistantContent(content: string): string {
   return result.length > 80 ? result : content.slice(0, 400);
 }
 
+/** Паттерны «фиктивных» ответов ассистента, которые засоряют историю и мешают следующему шагу генерировать SQL. */
+const FILLER_REPLY_RE = /^(извини|подожди|сейчас|да,?\s*я|конечно|ок,?\s*|хорошо|подготовлю|посмотрю|готовлю|момент|обновлено|уточн)/i;
+
+/** Проверяет, что в тексте запроса уже указан период (месяц, год, «последние N» и т.д.). */
+function userMessageHasExplicitPeriod(text: string): boolean {
+  const lower = text.toLowerCase();
+  const monthWords = "январь|февраль|март|апрель|май|июнь|июль|август|сентябрь|октябрь|ноябрь|декабрь";
+  if (new RegExp(`(за|в|за\\s+)?(${monthWords})`, "i").test(lower)) return true;
+  if (/\d{4}\s*год|год\s*\d{4}|за\s*\d{4}/i.test(lower)) return true;
+  if (/последние\s+\d+|за\s+последние|текущий\s+месяц|этот\s+месяц|прошлый\s+месяц/i.test(lower)) return true;
+  if (/квартал|полгода|полугодие/i.test(lower)) return true;
+  return false;
+}
+
 function buildHistoryMessages(
   raw: Array<{ role?: string; content?: string }> | undefined
 ): Array<{ role: "user" | "assistant"; content: string }> {
   if (!Array.isArray(raw) || raw.length === 0) return [];
   const slice = raw.slice(-MAX_HISTORY_MESSAGES);
   let list = slice
-    .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+    .filter((m) => {
+      if (!m || !(m.role === "user" || m.role === "assistant") || typeof m.content !== "string") return false;
+      // Фильтруем короткие бессодержательные ответы ассистента (они мешают генерации SQL)
+      if (m.role === "assistant") {
+        const c = (m.content as string).trim();
+        if (c.length < 180 && FILLER_REPLY_RE.test(c)) return false;
+      }
+      return true;
+    })
     .map((m) => {
       const role = m.role as "user" | "assistant";
       let content = (m.content as string).trim();
@@ -140,8 +163,8 @@ export async function POST(req: NextRequest) {
   const t0 = Date.now();
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
-    const body = (await req.json()) as { message: string; stream?: boolean; history?: Array<{ role: string; content: string }>; debug?: boolean };
-    const { message, stream: useStream, history: rawHistory, debug: showSql } = body;
+    const body = (await req.json()) as { message: string; stream?: boolean; history?: Array<{ role: string; content: string }>; debug?: boolean; noAnonymize?: boolean; source?: string };
+    const { message, stream: useStream, history: rawHistory, debug: showSql, noAnonymize, source: requestSource } = body;
     if (!message || typeof message !== "string") {
       return NextResponse.json(
         { error: "Требуется поле message (строка)" },
@@ -152,10 +175,16 @@ export async function POST(req: NextRequest) {
     historyMessages = await buildEconomicalHistory(openai, historyMessages);
     const userContent = message.trim();
 
-    void debugLog("REQUEST", {
+    const requestId = randomUUID().slice(0, 8);
+    const log = createRequestLogger(requestId);
+
+    const isNewDialog = historyMessages.length === 0;
+    log("REQUEST", {
       message: userContent,
       stream: useStream,
       historyLength: historyMessages.length,
+      newDialog: isNewDialog,
+      source: requestSource ?? "unknown",
       debug: showSql,
     });
 
@@ -235,8 +264,8 @@ export async function POST(req: NextRequest) {
 
     const controller = new AbortController();
     timeoutId = setTimeout(() => controller.abort(), 150_000);
-    const sqlModelOpts = { model: getSqlModel(), temperature: CHAT_TEMPERATURE, max_tokens: SQL_MAX_TOKENS };
-    const formatModelOpts = { model: getFormatModel(), temperature: CHAT_TEMPERATURE, max_tokens: FORMAT_MAX_TOKENS };
+    const sqlModelOpts = { model: getSqlModel(), temperature: CHAT_TEMPERATURE, max_completion_tokens: SQL_MAX_TOKENS };
+    const formatModelOpts = { model: getFormatModel(), temperature: CHAT_TEMPERATURE, max_completion_tokens: FORMAT_MAX_TOKENS };
 
     const firstCallMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: "system", content: dbConfigured ? systemForSql : systemFallback },
@@ -259,7 +288,7 @@ export async function POST(req: NextRequest) {
     let exportId: string | undefined;
     let exportRowCount: number | undefined;
 
-    void debugLog("AI_SQL_STEP", {
+    log("AI_SQL_STEP", {
       step1Ms,
       rawReplyLength: rawReply.length,
       rawReplyPreview: rawReply.slice(0, 2000),
@@ -269,37 +298,56 @@ export async function POST(req: NextRequest) {
     if (dbConfigured && hasClarifyBlock(rawReply)) {
       const clarifySpec = parseClarifyBlock(rawReply);
       if (clarifySpec) {
-        clearTimeout(timeoutId);
-        void debugLog("CLARIFY", { message: clarifySpec.message, optionsCount: clarifySpec.options.length });
-        const payload = {
-          reply: clarifySpec.message,
-          charts: [],
-          suggestions: clarifySpec.options,
-          clarify: clarifySpec,
-        };
-        if (useStream) {
-          const encoder = new TextEncoder();
-          const stream = new ReadableStream({
-            start(ctrl) {
-              ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ t: "e", ...payload })}\n\n`));
-              ctrl.close();
-            },
-          });
-          return new Response(stream, {
-            headers: { ...SECURITY_HEADERS, "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" },
-          });
+        const isPeriodClarify = /период|временной|месяц|квартал|год|дату|даты/i.test(clarifySpec.message);
+        const periodAlreadyInRequest = userMessageHasExplicitPeriod(userContent);
+        if (isPeriodClarify && periodAlreadyInRequest) {
+          log("CLARIFY_SKIP", { reason: "period_clarify_but_period_in_request", messagePreview: userContent.slice(0, 200) });
+          const retryClarifyMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+            { role: "system", content: systemForSql },
+            ...historyMessages.map((m) => ({ role: m.role, content: m.content })),
+            { role: "user", content: userContent },
+            { role: "assistant", content: rawReply },
+            { role: "user", content: "Период уже указан в запросе (например «за февраль»). Не выводи блок clarify. Сформируй только блок \\`\\`\\`sql с запросом к БД по этому периоду." },
+          ];
+          const retryClarifyCompletion = await openai.chat.completions.create(
+            { ...sqlModelOpts, messages: retryClarifyMessages },
+            { signal: controller.signal }
+          );
+          rawReply = retryClarifyCompletion.choices[0]?.message?.content?.trim() ?? "";
+          log("AI_SQL_STEP", { step: "retry_after_clarify_skip", rawReplyLength: rawReply.length, rawReplyPreview: rawReply.slice(0, 1500) });
+        } else {
+          clearTimeout(timeoutId);
+          log("CLARIFY", { message: clarifySpec.message, optionsCount: clarifySpec.options.length });
+          const payload = {
+            reply: clarifySpec.message,
+            charts: [],
+            suggestions: clarifySpec.options,
+            clarify: clarifySpec,
+          };
+          if (useStream) {
+            const encoder = new TextEncoder();
+            const stream = new ReadableStream({
+              start(ctrl) {
+                ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ t: "e", ...payload })}\n\n`));
+                ctrl.close();
+              },
+            });
+            return new Response(stream, {
+              headers: { ...SECURITY_HEADERS, "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" },
+            });
+          }
+          return NextResponse.json(payload, { headers: SECURITY_HEADERS });
         }
-        return NextResponse.json(payload, { headers: SECURITY_HEADERS });
       }
     }
 
     let sql = dbConfigured ? extractSqlFromReply(rawReply) : null;
 
-    void debugLog("SQL_EXTRACTED", { extractedSql: sql ?? "(нет блока sql)" });
+    log("SQL_EXTRACTED", { extractedSql: sql ?? "(нет блока sql)" });
 
     if (sql) {
       let result = await runUserSql(sql);
-      void debugLog("SQL_RUN", {
+      log("SQL_RUN", {
         ok: result.ok,
         rowCount: result.ok ? result.rowCount : undefined,
         error: result.ok ? undefined : result.error,
@@ -329,7 +377,7 @@ export async function POST(req: NextRequest) {
         const retryReply = retryCompletion.choices[0]?.message?.content?.trim() ?? "";
         sql = extractSqlFromReply(retryReply);
         if (sql) result = await runUserSql(sql);
-        void debugLog("SQL_RETRY", { reason: "error", newSqlPreview: sql?.slice(0, 400), ok: result.ok, rowCount: result.ok ? result.rowCount : undefined });
+        log("SQL_RETRY", { reason: "error", newSqlPreview: sql?.slice(0, 400), ok: result.ok, rowCount: result.ok ? result.rowCount : undefined });
       }
       if (result.ok && result.rowCount === 0) {
         // Dynamic current-month bounds for hint (avoid hardcoding past dates)
@@ -357,22 +405,23 @@ export async function POST(req: NextRequest) {
           if (result2.ok && result2.rowCount > 0) {
             result = result2;
             sql = sql2;
-            void debugLog("SQL_RETRY", { reason: "empty", usedSecondQuery: true, rowCount: result2.rowCount });
+            log("SQL_RETRY", { reason: "empty", usedSecondQuery: true, rowCount: result2.rowCount });
           }
         }
       }
       if (sql) sqlUsed = sql;
       if (result.ok) {
-        if (result.rowCount >= CSV_EXPORT_THRESHOLD) {
-          exportId = crypto.randomUUID();
+        if (result.rowCount > 0) {
+          exportId = randomUUID();
           exportRowCount = result.rowCount;
           setExport(exportId, result.rows);
         }
-        const { anonymizedRows, placeholderToReal } = anonymizeRows(result.rows);
+        const useAnonymize = !noAnonymize;
+        const { anonymizedRows, placeholderToReal } = useAnonymize ? anonymizeRows(result.rows) : { anonymizedRows: result.rows, placeholderToReal: new Map<string, string>() };
         const dataBlock = `[Результат запроса к БД (${result.rowCount} строк):]\n\`\`\`\n${formatRowsForAi(anonymizedRows)}\n\`\`\``;
-        const formatUserContent = `Вопрос пользователя: ${userContent}\n\n${dataBlock}\n\nСделай данные наглядными. При показе сумм укажи единицу по данным БД (Казахстан — возможно тенге).${result.rowCount >= CSV_EXPORT_THRESHOLD ? " В начале ответа кратко отметь, что показано много строк и доступна выгрузка в CSV." : ""}`;
+        const formatUserContent = `Вопрос пользователя: ${userContent}\n\n${dataBlock}\n\nСделай данные наглядными. Суммы указывай в KZT (тенге).${result.rowCount >= CSV_EXPORT_THRESHOLD ? " В начале ответа кратко отметь, что показано много строк и доступна выгрузка в CSV." : ""}`;
 
-        void debugLog("FORMAT_INPUT", {
+        log("FORMAT_INPUT", {
           dataBlockLength: dataBlock.length,
           dataPreview: dataBlock.slice(0, 1500),
           userQuestion: userContent,
@@ -415,8 +464,8 @@ export async function POST(req: NextRequest) {
               }
               ctrl.enqueue(encoder.encode(`data: ${JSON.stringify(endPayload)}\n\n`));
               ctrl.close();
-              void debugLog("FORMAT_OUTPUT", { replyLength: reply.length, replyPreview: reply.slice(0, 1500), chartsCount: chartsForClient.length, suggestionsCount: parsed.suggestions?.length ?? 0 });
-              void debugLog("RESPONSE", { stream: true, finalReplyLength: reply.length, sqlReturned: !!sqlUsed, durationMs: Date.now() - t0 });
+              log("FORMAT_OUTPUT", { replyLength: reply.length, replyPreview: reply.slice(0, 1500), chartsCount: chartsForClient.length, suggestionsCount: parsed.suggestions?.length ?? 0 });
+              log("RESPONSE", { stream: true, finalReplyLength: reply.length, sqlReturned: !!sqlUsed, durationMs: Date.now() - t0, source: requestSource ?? "unknown" });
               if (historyMessages.length === 0) setCached(userContent, reply, chartsForClient, parsed.suggestions ?? []);
             },
           });
@@ -443,7 +492,7 @@ export async function POST(req: NextRequest) {
         // Диаграммы на фронт/дашборд — с реальными данными; ИИ получал только обезличенные
         charts = replacePlaceholdersInObject(parsed.charts ?? [], placeholderToReal) as unknown[];
         suggestions = parsed.suggestions ?? [];
-        void debugLog("FORMAT_OUTPUT", {
+        log("FORMAT_OUTPUT", {
           replyLength: finalReply.length,
           replyPreview: finalReply.slice(0, 1500),
           chartsCount: charts.length,
@@ -451,22 +500,23 @@ export async function POST(req: NextRequest) {
         });
       } else {
         finalReply = `Не удалось выполнить запрос к данным: ${result.error}. Уточните вопрос или попробуйте переформулировать.`;
-        void debugLog("SQL_FAILED", { error: result.error });
+        log("SQL_FAILED", { error: result.error }, "error");
       }
     } else {
       const parsed = parseReplyBlocks(rawReply);
       finalReply = parsed.text && parsed.text.length > 0 ? parsed.text : rawReply;
       charts = parsed.charts ?? [];
       suggestions = parsed.suggestions ?? [];
-      void debugLog("NO_SQL", { rawReplyPreview: rawReply.slice(0, 1000), finalReplyLength: finalReply.length });
+      log("NO_SQL", { rawReplyPreview: rawReply.slice(0, 1000), finalReplyLength: finalReply.length });
     }
 
-    void debugLog("RESPONSE", {
+    log("RESPONSE", {
       durationMs: Date.now() - t0,
       finalReplyLength: finalReply.length,
       sqlReturned: !!sqlUsed,
       chartsCount: charts.length,
       suggestionsCount: suggestions.length,
+      source: requestSource ?? "unknown",
     });
 
     clearTimeout(timeoutId);
@@ -500,10 +550,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(jsonPayload, { headers: SECURITY_HEADERS });
   } catch (err: unknown) {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
-    void debugLog("ERROR", {
+    const log = createRequestLogger(randomUUID().slice(0, 8));
+    log("ERROR", {
       error: err instanceof Error ? err.message : String(err),
       stack: err instanceof Error ? err.stack : undefined,
-    });
+    }, "error");
     const msg =
       err instanceof Error
         ? err.name === "AbortError"

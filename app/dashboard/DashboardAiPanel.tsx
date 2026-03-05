@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import MessageContent from "@/app/components/MessageContent";
 import ChartBlock from "@/app/components/ChartBlock";
-import { parseReplyBlocks, type ChartSpec } from "@/app/lib/chartSpec";
+import { parseReplyBlocks, type ChartSpec, type ClarifySpec } from "@/app/lib/chartSpec";
+import { randomUUID } from "@/app/lib/uuid";
 
 const QUICK_PROMPTS = [
   "Дай 3 вывода и рекомендации по данным",
@@ -37,6 +38,8 @@ interface AiMessage {
   role: "user" | "assistant";
   content: string;
   charts?: ChartSpec[];
+  suggestions?: string[];
+  clarify?: ClarifySpec;
 }
 
 interface DashboardAiPanelProps {
@@ -101,7 +104,7 @@ export default function DashboardAiPanel({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: fullMessage, stream: true, history: historyForApi }),
+        body: JSON.stringify({ message: fullMessage, stream: true, history: historyForApi, noAnonymize: true, source: "dashboard" }),
         signal,
         ...FETCH_OPTS,
       });
@@ -127,6 +130,7 @@ export default function DashboardAiPanel({
           try {
             const payload = JSON.parse(line.slice(6)) as {
               t?: string; c?: string; reply?: string; error?: string; charts?: ChartSpec[];
+              suggestions?: string[]; clarify?: ClarifySpec;
             };
             if (payload.t === "d" && typeof payload.c === "string") {
               setMessages((prev) => {
@@ -155,6 +159,8 @@ export default function DashboardAiPanel({
                     ...last,
                     content: payload.reply ?? last.content,
                     charts,
+                    suggestions: Array.isArray(payload.suggestions) ? payload.suggestions : undefined,
+                    clarify: payload.clarify ?? undefined,
                   };
                 }
                 return next;
@@ -196,13 +202,21 @@ export default function DashboardAiPanel({
     const pinId = `${msgIndex}-${chart.title}`;
     if (pinnedIds.has(pinId)) return;
     setPinnedIds((prev) => { const next = new Set(Array.from(prev)); next.add(pinId); return next; });
+    const title = chart.title || "ИИ-диаграмма";
+    const prompt = messages[msgIndex - 1]?.content ?? "";
     onPinChart({
-      id: crypto.randomUUID(),
-      title: chart.title || "ИИ-диаграмма",
+      id: randomUUID(),
+      title,
       chartSpec: chart,
-      prompt: messages[msgIndex - 1]?.content ?? "",
+      prompt,
       createdAt: Date.now(),
     });
+    void fetch("/api/debug-log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: "WIDGET_CREATED", source: "dashboard", widgetTitle: title, prompt }),
+      credentials: "include",
+    }).catch(() => {});
   }
 
   if (!open) return null;
@@ -217,7 +231,7 @@ export default function DashboardAiPanel({
       />
 
       {/* Panel */}
-      <div className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md flex flex-col bg-white border-l border-[#e8edf2] shadow-2xl animate-slide-in-right">
+      <div className="fixed right-0 top-0 bottom-0 z-50 flex flex-col bg-white border-l border-[#e8edf2] shadow-2xl animate-slide-in-right" style={{ width: "min(50vw, 780px)", minWidth: "380px" }}>
 
         {/* Header */}
         <div className="flex-shrink-0 px-4 py-3 border-b border-[#e8edf2] flex items-center justify-between gap-2 bg-[#fafbfc]">
@@ -261,9 +275,11 @@ export default function DashboardAiPanel({
         {/* Context bar */}
         {contextString && (
           <div className="flex-shrink-0 px-4 py-2 bg-accent/5 border-b border-accent/10">
-            <p className="text-xs text-slate-500 truncate">
+            <p className="text-xs text-slate-500 truncate" title={contextString.length > 200 ? "Полные данные дашборда переданы ассистенту" : contextString}>
               <span className="text-accent font-medium">Контекст: </span>
-              {contextString.slice(0, 120)}{contextString.length > 120 ? "…" : ""}
+              {contextString.length > 200
+                ? "полные данные дашборда (KPI + виджеты), доступ к БД как в основном чате"
+                : contextString.slice(0, 120)}{contextString.length > 120 && contextString.length <= 200 ? "…" : ""}
             </p>
           </div>
         )}
@@ -365,6 +381,47 @@ export default function DashboardAiPanel({
                             </div>
                           );
                         })}
+                      </div>
+                    )}
+
+                    {m.role === "assistant" && m.clarify && m.clarify.options.length > 0 && (
+                      <div className="mt-4 pt-3 border-t border-[#e8edf2]">
+                        <div className="flex items-center gap-1.5 mb-2.5">
+                          <svg className="w-3.5 h-3.5 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <p className="text-xs font-semibold text-accent">Уточните запрос</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {m.clarify.options.map((opt) => (
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => sendMessage(opt)}
+                              className="px-3 py-2 rounded-xl bg-accent/10 hover:bg-accent/15 text-accent text-xs font-medium border border-accent/20 hover:border-accent/40 transition-all duration-200"
+                            >
+                              {opt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {m.role === "assistant" && !m.clarify && m.suggestions && m.suggestions.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-[#f0f4f8]">
+                        <p className="text-xs font-medium text-slate-400 mb-2">Что спросить дальше</p>
+                        <div className="flex flex-wrap gap-2">
+                          {m.suggestions.map((s) => (
+                            <button
+                              key={s}
+                              type="button"
+                              onClick={() => sendMessage(s)}
+                              className="px-3 py-1.5 rounded-lg bg-[#f8fafc] hover:bg-[#f1f5f9] text-slate-500 hover:text-slate-700 text-xs border border-[#e8edf2] hover:border-[#cbd5e1] transition-all duration-200"
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>

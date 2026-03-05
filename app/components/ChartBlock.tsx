@@ -19,13 +19,15 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import type { ChartSpec } from "@/app/lib/chartSpec";
+import { TOOLTIP_CONTENT_STYLE } from "./HoverTooltip";
 
 const CHART_COLORS = ["#0ea5e9", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", "#06b6d4"];
 
 export default function ChartBlock({ spec }: { spec: ChartSpec }) {
   const chartRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
-  const { type, title, data, xKey, yKey = "y", nameKey = "name", valueKey = "value", series, stacked, description } = spec;
+  const { type, title, xKey, yKey = "y", nameKey = "name", valueKey = "value", series, stacked, description } = spec;
+  const data = Array.isArray(spec.data) ? spec.data : [];
   const hasSeries = Array.isArray(series) && series.length > 0;
   const stackId = stacked ? "stack1" : undefined;
   const manyCategories = type === "bar" && data.length > 6;
@@ -37,13 +39,18 @@ export default function ChartBlock({ spec }: { spec: ChartSpec }) {
   };
 
   const axisStyle = { stroke: "#94a3b8", fontSize: 11 };
-  const tooltipContentStyle = {
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
-    borderRadius: "8px",
-    padding: "8px 12px",
-    fontSize: 12,
-  };
+  const tooltipContentStyle = TOOLTIP_CONTENT_STYLE;
+
+  if (data.length === 0) {
+    return (
+      <div className="mt-3 rounded-2xl overflow-hidden bg-white border border-[#e8edf2] shadow-card">
+        <div className="px-4 py-3 border-b border-[#f0f4f8] bg-[#fafbfc]">
+          <span className="text-sm font-semibold text-slate-800">{title || "График"}</span>
+        </div>
+        <div className="p-6 text-center text-sm text-slate-500">Нет данных</div>
+      </div>
+    );
+  }
 
   async function handleExport() {
     if (!chartRef.current || exporting) return;

@@ -9,7 +9,9 @@ import {
 } from "recharts";
 import type { WidgetKey } from "@/app/lib/dashboardQueries";
 import type { ChartSpec } from "@/app/lib/chartSpec";
+import { randomUUID } from "@/app/lib/uuid";
 import ChartBlock from "@/app/components/ChartBlock";
+import HoverTooltip from "@/app/components/HoverTooltip";
 import TopNav from "@/app/components/TopNav";
 import DashboardAiPanel from "./DashboardAiPanel";
 
@@ -24,8 +26,14 @@ const CHART_COLORS = [
   "#ef4444", "#06b6d4", "#84cc16", "#ec4899",
 ];
 const TOOLTIP_STYLE = {
-  background: "#ffffff", border: "1px solid #cbd5e1",
-  borderRadius: 8, padding: "8px 12px", fontSize: 12,
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 10,
+  padding: "10px 14px",
+  fontSize: 12,
+  color: "#0f172a",
+  boxShadow: "0 10px 40px -10px rgba(15, 23, 42, 0.25), 0 4px 12px -2px rgba(15, 23, 42, 0.08)",
+  maxWidth: 320,
 };
 const AXIS_TICK = { fill: "#475569", fontSize: 11 };
 const GRID_STROKE = "#e2e8f0";
@@ -66,7 +74,7 @@ const WIDGET_META: Record<WidgetKey, { label: string; desc: string; icon: string
   conversion_by_channel: { label: "Конверсия по каналам", desc: "% перехода заявок в сделки", icon: "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6", span: "half" },
   deals_by_status: { label: "Сделки по статусам", desc: "Распределение сделок по статусам", icon: "M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z", span: "third" },
   payment_incoming: { label: "Платежи в периоде", desc: "Просрочено / в срок", icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z", span: "third" },
-  leads_funnel: { label: "Воронка продаж", desc: "Заявки → Встречи → Сделки", icon: "M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4", span: "third" },
+  leads_funnel: { label: "Воронка продаж", desc: "За период: заявки (все), встречи, завершённые сделки", icon: "M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4", span: "third" },
 };
 
 const ALL_CHART_WIDGETS: WidgetKey[] = [
@@ -223,7 +231,9 @@ function KpiCard({ label, value, subValue, icon, color, bgFrom, bgTo, borderColo
           </svg>
         </div>
       </div>
-      <p className="text-2xl font-bold text-slate-900 truncate leading-tight" title={value}>{value}</p>
+      <HoverTooltip content={<><strong>{label}</strong><br />{value}</>}>
+        <p className="text-2xl font-bold text-slate-900 truncate leading-tight cursor-default">{value}</p>
+      </HoverTooltip>
       {subValue && <p className="text-xs font-medium" style={{ color }}>{subValue}</p>}
     </div>
   );
@@ -244,7 +254,9 @@ function WidgetCard({
     <div className={`ui-card ui-card-elevate overflow-hidden animate-fade-in flex flex-col
       ${span === "full" ? "lg:col-span-3" : span === "half" ? "lg:col-span-2" : "lg:col-span-1"}`}>
       <div className="flex-shrink-0 px-4 py-3 border-b border-[#f0f4f8] flex items-center justify-between gap-2 bg-[#fafbfc]">
-        <span className="text-sm font-semibold text-slate-700 truncate">{title}</span>
+        <HoverTooltip content={<strong>{title}</strong>}>
+          <span className="text-sm font-semibold text-slate-700 truncate cursor-default">{title}</span>
+        </HoverTooltip>
         <button type="button" onClick={onRemove}
           className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-400 hover:bg-red-50 transition-all"
           title="Удалить виджет">
@@ -296,7 +308,7 @@ function ChartDealsAmount({ rows }: { rows: Record<string, unknown>[] }) {
         <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
         <XAxis dataKey="month" tick={AXIS_TICK} />
         <YAxis tick={AXIS_TICK} tickFormatter={(v) => formatMoney(v)} />
-        <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: "#334155" }} formatter={(v: number, name: string) => [name === "amount" ? v.toLocaleString("ru-RU") : v, name === "amount" ? "Сумма" : "Сделок"]} />
+        <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: "#334155" }} formatter={(v: number, name: string) => [name === "amount" ? v.toLocaleString("ru-RU") : v, name === "amount" ? "Сумма, ₸" : "Сделок"]} />
         <Area type="monotone" dataKey="amount" stroke="#10b981" strokeWidth={2.5} fill="url(#gradAmt)" dot={{ fill: "#10b981", r: 3 }} name="amount" />
       </AreaChart>
     </ResponsiveContainer>
@@ -331,8 +343,8 @@ function ChartManagers({ rows }: { rows: Record<string, unknown>[] }) {
         <XAxis dataKey="manager" tick={{ ...AXIS_TICK, fontSize: 10 }} angle={-25} textAnchor="end" height={65} interval={0} />
         <YAxis yAxisId="left" tick={AXIS_TICK} allowDecimals={false} />
         <YAxis yAxisId="right" orientation="right" tick={AXIS_TICK} tickFormatter={(v) => formatMoney(v)} />
-        <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number, name: string) => [name === "deals_amount" ? v.toLocaleString("ru-RU") : v, name === "deals_amount" ? "Сумма" : "Сделок"]} />
-        <Legend formatter={(v) => <span style={{ color: "#94a3b8", fontSize: 11 }}>{v === "deals_count" ? "Сделок" : "Сумма"}</span>} />
+        <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number, name: string) => [name === "deals_amount" ? v.toLocaleString("ru-RU") : v, name === "deals_amount" ? "Сумма, ₸" : "Сделок"]} />
+        <Legend formatter={(v) => <span style={{ color: "#94a3b8", fontSize: 11 }}>{v === "deals_count" ? "Сделок" : "Сумма, ₸"}</span>} />
         <Bar yAxisId="left" dataKey="deals_count" name="deals_count" fill="#0ea5e9" radius={[4, 4, 0, 0]} maxBarSize={36} />
         <Bar yAxisId="right" dataKey="deals_amount" name="deals_amount" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={36} />
       </BarChart>
@@ -389,7 +401,7 @@ function ChartDebtByHouse({ rows }: { rows: Record<string, unknown>[] }) {
         <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} vertical={false} />
         <XAxis dataKey="name" tick={{ ...AXIS_TICK, fontSize: 10 }} angle={-40} textAnchor="end" height={72} interval={0} />
         <YAxis tick={AXIS_TICK} tickFormatter={(v) => formatMoney(v)} />
-        <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => [v.toLocaleString("ru-RU"), "Сумма"]} />
+        <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => [v.toLocaleString("ru-RU"), "Сумма, ₸"]} />
         <Bar dataKey="total" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={32} />
       </BarChart>
     </ResponsiveContainer>
@@ -446,7 +458,7 @@ function ChartPaymentIncoming({ rows }: { rows: Record<string, unknown>[] }) {
           label={({ name }) => name} labelLine={{ stroke: "#475569", strokeWidth: 1 }}>
           {d.map((entry, i) => <Cell key={i} fill={colors[entry.name] ?? CHART_COLORS[i % CHART_COLORS.length]} />)}
         </Pie>
-        <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number, _name: string, p: { payload?: { cnt?: number } }) => [v.toLocaleString("ru-RU"), `Сумма • операций: ${p?.payload?.cnt ?? 0}`]} />
+        <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number, _name: string, p: { payload?: { cnt?: number } }) => [v.toLocaleString("ru-RU"), `Сумма, ₸ • операций: ${p?.payload?.cnt ?? 0}`]} />
         <Legend formatter={(v) => <span style={{ color: "#94a3b8", fontSize: 10 }}>{v}</span>} />
       </PieChart>
     </ResponsiveContainer>
@@ -570,7 +582,7 @@ function AiChartBuilderModal({ onAdd, onClose }: AiChartBuilderProps) {
   function handleAdd() {
     if (!previewChart) return;
     const widget: CustomWidget = {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       title: previewTitle || prompt,
       chartSpec: { ...previewChart, title: previewTitle || previewChart.title },
       prompt,
@@ -816,7 +828,7 @@ export default function DashboardPage() {
     const name = createName.trim() || "Новый дашборд";
     const template = TEMPLATES.find((t) => t.id === createTemplateId);
     const widgetIds = template ? [...template.widgetIds] : [];
-    const id = crypto.randomUUID();
+    const id = randomUUID();
     setState((s) => ({
       dashboards: [...s.dashboards, { id, name, widgetIds, createdAt: Date.now() }],
       activeId: id,
@@ -851,21 +863,64 @@ export default function DashboardPage() {
     : "Период";
 
   const aiContextString = useMemo(() => {
-    const parts: string[] = [];
-    if (activeDashboard?.name) parts.push(`дашборд «${activeDashboard.name}»`);
-    const sr = data.summary?.[0];
+    const MAX_ROWS_PER_WIDGET = 40;
+    const MAX_CONTEXT_CHARS = 28000;
+
+    const lines: string[] = [];
+    lines.push("=== КОНТЕКСТ ДАШБОРДА ===");
+    lines.push("Ты видишь все данные текущего дашборда ниже. Ты также можешь выполнять запросы к БД (SELECT) как в основном чате — используй блок ```sql, бэкенд выполнит запрос и вернёт результат. Графики: при запросе «гистограмма», «столбчатая» → type bar; «линейный», «тренд» → line или area; «круговая», «доли» → pie. Если пользователь не указал тип — предложи лучший по смыслу (bar для сравнения по категориям, line/area для динамики по времени, pie для долей). При «хочу график», «диаграмму», «визуализируй» предложи подходящий тип и построй по данным из БД или из контекста дашборда.");
+    lines.push("");
+
+    if (activeDashboard?.name) lines.push(`Дашборд: «${activeDashboard.name}»`);
+    lines.push(`Период: ${periodLabel} (параметр периода: ${period})`);
+    lines.push("");
+
+    const sr = data.summary?.[0] as Record<string, unknown> | undefined;
     if (sr) {
-      const items: string[] = [];
-      if (sr.total_deals != null) items.push(`сделок ${sr.total_deals}`);
-      if (sr.total_deal_amount != null) items.push(`выручка ${Number(sr.total_deal_amount).toLocaleString("ru-RU")}`);
-      if (sr.total_leads != null) items.push(`заявок ${sr.total_leads}`);
-      if (sr.total_leads && Number(sr.total_leads) > 0 && sr.leads_with_deal != null)
-        items.push(`конверсия ${Math.round((Number(sr.leads_with_deal) / Number(sr.total_leads)) * 1000) / 10}%`);
-      if (sr.total_debt != null) items.push(`к оплате ${Number(sr.total_debt).toLocaleString("ru-RU")}`);
-      if (items.length) parts.push(items.join(", "));
+      lines.push("--- KPI-сводка (summary) ---");
+      const summaryKeys = [
+        "total_deals", "completed_deals", "total_deal_amount", "total_leads", "leads_with_deal",
+        "total_debt", "overdue_debt", "active_properties",
+      ];
+      summaryKeys.forEach((k) => {
+        const v = sr[k];
+        if (v != null) lines.push(`${k}: ${typeof v === "number" ? v.toLocaleString("ru-RU") : v}`);
+      });
+      lines.push("");
     }
-    return parts.join(". ") || "нет показателей";
-  }, [activeDashboard?.name, data.summary]);
+
+    const widgetKeys = stdWidgets.filter((k) => data[k] && Array.isArray(data[k]));
+    let totalChars = lines.join("\n").length;
+    for (const key of widgetKeys) {
+      const meta = WIDGET_META[key];
+      const label = meta?.label ?? key;
+      const rows = data[key] as Record<string, unknown>[] | undefined;
+      if (!rows || rows.length === 0) continue;
+      const limited = rows.slice(0, MAX_ROWS_PER_WIDGET);
+      const cols = limited.length > 0 ? Object.keys(limited[0]) : [];
+      const header = cols.join("\t");
+      const dataLines = limited.map((r) => cols.map((c) => String(r[c] ?? "")).join("\t"));
+      const block = `--- ${label} (${key}) ---\nКолонки: ${cols.join(", ")}\n${header}\n${dataLines.join("\n")}${rows.length > MAX_ROWS_PER_WIDGET ? `\n... всего строк: ${rows.length}` : ""}`;
+      if (totalChars + block.length > MAX_CONTEXT_CHARS) break;
+      lines.push(block);
+      lines.push("");
+      totalChars += block.length;
+    }
+
+    const customIds = widgets.filter((w) => String(w).startsWith("custom:"));
+    const customList = Object.values(customWidgets);
+    if (customIds.length > 0 && customList.length > 0) {
+      lines.push("--- Пользовательские виджеты (закреплённые графики из чата) ---");
+      customIds.forEach((id) => {
+        const cw = customList.find((c: CustomWidget) => `custom:${c.id}` === id);
+        if (cw) lines.push(`- ${cw.title} (данных в контексте нет, можно запросить через SQL при необходимости)`);
+      });
+      lines.push("");
+    }
+
+    lines.push("=== КОНЕЦ КОНТЕКСТА ДАШБОРДА ===");
+    return lines.join("\n");
+  }, [activeDashboard?.name, period, periodLabel, data, stdWidgets, widgets, customWidgets]);
 
   const availableToAdd = ALL_CHART_WIDGETS.filter((k) => !widgets.includes(k));
   const summaryInWidgets = widgets.includes("summary");
@@ -874,19 +929,20 @@ export default function DashboardPage() {
   const kpiCards = useMemo((): KpiCardProps[] => {
     const sr = summaryRow;
     const totalDeals = Number(sr?.total_deals ?? 0);
+    const completedDeals = Number(sr?.completed_deals ?? 0);
     const totalAmount = Number(sr?.total_deal_amount ?? 0);
     const totalLeads = Number(sr?.total_leads ?? 0);
     const leadsWithDeal = Number(sr?.leads_with_deal ?? 0);
     const totalDebt = Number(sr?.total_debt ?? 0);
     const overdueDebt = Number(sr?.overdue_debt ?? 0);
     const activeProps = Number(sr?.active_properties ?? 0);
-    const conversion = totalLeads > 0 ? Math.round((leadsWithDeal / totalLeads) * 1000) / 10 : 0;
+    const conversion = totalLeads > 0 ? Math.round((completedDeals / totalLeads) * 1000) / 10 : 0;
 
     return [
       {
         label: "Сделок за период",
-        value: loading ? "—" : totalDeals.toLocaleString("ru-RU"),
-        subValue: `за ${periodLabel}`,
+        value: loading ? "—" : completedDeals.toLocaleString("ru-RU"),
+        subValue: `завершённых за ${periodLabel}`,
         icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
         color: "#38bdf8",
         bgFrom: "rgba(14,165,233,0.12)",
@@ -896,7 +952,7 @@ export default function DashboardPage() {
       {
         label: "Выручка",
         value: loading ? "—" : formatMoney(totalAmount),
-        subValue: totalAmount > 0 ? `${totalAmount.toLocaleString("ru-RU")} ₽` : undefined,
+        subValue: totalAmount > 0 ? `${totalAmount.toLocaleString("ru-RU")} ₸` : undefined,
         icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
         color: "#34d399",
         bgFrom: "rgba(16,185,129,0.12)",
@@ -906,7 +962,7 @@ export default function DashboardPage() {
       {
         label: "Новых заявок",
         value: loading ? "—" : totalLeads.toLocaleString("ru-RU"),
-        subValue: `${leadsWithDeal} со сделкой`,
+        subValue: `${leadsWithDeal} со сделкой за период`,
         icon: "M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z",
         color: "#a78bfa",
         bgFrom: "rgba(139,92,246,0.12)",
@@ -967,8 +1023,8 @@ export default function DashboardPage() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#f8fafc] p-4 gap-4">
         <p className="text-slate-600 text-sm">Для просмотра дашбордов войдите в систему.</p>
-        <Link href="/" className="ui-btn ui-btn-primary px-5">
-          На главную
+        <Link href="/chat" className="ui-btn ui-btn-primary px-5">
+          Войти
         </Link>
       </div>
     );
@@ -981,12 +1037,14 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={() => setAiOpen(true)}
-        className="fixed bottom-6 right-6 z-30 w-14 h-14 rounded-2xl bg-gradient-to-br from-accent to-accent-dark text-white shadow-glow hover:from-accent-light hover:to-accent hover:scale-105 active:scale-95 transition-all flex items-center justify-center border border-white/10"
+        className="fixed bottom-6 right-6 z-30 h-14 px-5 rounded-2xl bg-gradient-to-br from-[#6366f1] to-[#4f46e5] text-white shadow-[0_4px_24px_rgba(99,102,241,0.55)] hover:from-[#818cf8] hover:to-[#6366f1] hover:shadow-[0_6px_32px_rgba(99,102,241,0.7)] hover:scale-105 active:scale-95 transition-all flex items-center gap-2.5 border border-white/20 font-semibold text-sm"
         title="ИИ-ассистент по данным дашборда"
       >
-        <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
         </svg>
+        <span>ИИ-ассистент</span>
+        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
       </button>
 
       <DashboardAiPanel
@@ -1002,7 +1060,7 @@ export default function DashboardPage() {
       {/* ── Sidebar ───────────────────────────────────────────────── */}
       <aside className={`${sidebarOpen ? "w-60" : "w-14"} flex-shrink-0 border-r border-[#e8edf2] bg-white flex flex-col transition-all duration-200 z-20`}>
         <div className="h-[57px] px-3 border-b border-[#e8edf2] flex items-center justify-between gap-2">
-          <Link href="/" className="flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors min-w-0" title="Назад к чату">
+          <Link href="/chat" className="flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors min-w-0" title="ИИ-ассистент (чат)">
             <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
@@ -1021,7 +1079,15 @@ export default function DashboardPage() {
         <div className="flex-1 overflow-y-auto scrollbar-thin py-2">
           {sidebarOpen ? (
             <>
-              <p className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">Дашборды</p>
+              <div className="px-2 mb-1">
+            <Link href={`/funnel?period=${encodeURIComponent(period)}`} className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-slate-600 hover:text-[#6366f1] hover:bg-[#6366f1]/8 transition-all group">
+              <svg className="w-4 h-4 shrink-0 text-[#6366f1]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+              </svg>
+              <span className="font-medium">Воронка продаж</span>
+            </Link>
+          </div>
+          <p className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">Дашборды</p>
               {state.dashboards.map((d) => (
                 <div key={d.id} className="group relative px-2">
                   {renameId === d.id ? (
@@ -1083,6 +1149,11 @@ export default function DashboardPage() {
             </>
           ) : (
             <div className="flex flex-col items-center gap-1 px-2 py-1">
+              <Link href={`/funnel?period=${encodeURIComponent(period)}`} className="w-9 h-9 rounded-xl text-[#6366f1] hover:bg-[#6366f1]/10 flex items-center justify-center transition-all" title="Воронка продаж">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+                </svg>
+              </Link>
               {state.dashboards.map((d) => (
                 <button key={d.id} type="button"
                   onClick={() => setState((s) => ({ ...s, activeId: d.id }))}
@@ -1163,7 +1234,7 @@ export default function DashboardPage() {
               </button>
               <button type="button" onClick={() => { setAddTab("standard"); setAddWidgetOpen(true); }} className="ui-btn ui-btn-primary">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                + Виджет
+                Виджет
               </button>
             </>
           )}
@@ -1172,6 +1243,38 @@ export default function DashboardPage() {
         {/* Content */}
         <main className="flex-1 overflow-y-auto scrollbar-thin p-4 lg:p-6">
           <div className="max-w-screen-2xl mx-auto space-y-5">
+
+            {/* Воронка продаж — те же цифры, что в KPI (один источник: summary) */}
+            <section className="bg-white rounded-2xl border border-[#e8edf2] shadow-sm overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-[#f1f5f9] flex flex-wrap items-center justify-between gap-3 bg-[#fafbfc]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#6366f1] to-[#4f46e5] flex items-center justify-center shadow-sm">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="font-semibold text-slate-800 text-sm">Воронка продаж</h2>
+                    <p className="text-xs text-slate-400">{periodLabel}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  {summaryRow && !loading ? (
+                    <>
+                      <span className="text-sm text-slate-500"><span className="font-semibold text-slate-700">{Number(summaryRow.total_leads ?? 0).toLocaleString("ru-RU")}</span> заявок</span>
+                      <span className="text-sm text-slate-500"><span className="font-semibold text-slate-700">{Number(summaryRow.completed_deals ?? summaryRow.total_deals ?? 0).toLocaleString("ru-RU")}</span> завершённых сделок</span>
+                      <span className="text-sm text-slate-500">Конверсия <span className="font-semibold text-[#6366f1]">{summaryRow.total_leads ? (Math.round((Number(summaryRow.completed_deals ?? 0) / Number(summaryRow.total_leads)) * 1000) / 10) : 0}%</span></span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-slate-400">{loading ? "Загрузка…" : "Нет данных"}</span>
+                  )}
+                  <Link href={`/funnel?period=${encodeURIComponent(period)}`} className="ui-btn ui-btn-secondary !h-8 gap-1.5 text-sm">
+                    Подробнее
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </Link>
+                </div>
+              </div>
+            </section>
 
             {widgets.length === 0 ? (
               <div className="rounded-2xl border-2 border-dashed border-[#e2e8f0] p-16 text-center animate-fade-in">
