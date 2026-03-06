@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, useId, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import TopNav from "@/app/components/TopNav";
@@ -96,6 +96,7 @@ interface FunnelData {
   timeSeries?: TimeSeriesRow[];
   dealsTimeSeries?: TimeSeriesRow[];
   reservedTimeSeries?: TimeSeriesRow[];
+  allDealsTimeSeries?: TimeSeriesRow[];
 }
 
 /** Справочник статусов заявок (estate_statuses) для подписей */
@@ -440,53 +441,197 @@ function NewLeadsFunnelBlock(props: {
   );
 }
 
-/** Блок вкладки с заголовком, итогом, столбчатым графиком и пилюлями источников (Брони / Сделки по новым / Сделок за период) */
+/** Линейный график с заливкой (area chart) по ряду { dt, cnt } */
+function FunnelTimeSeriesChart({
+  series,
+  color,
+  formatDate,
+  valueLabel,
+}: {
+  series: { dt: string; cnt: number }[];
+  color: string;
+  formatDate: (dt: string) => string;
+  valueLabel?: string;
+}) {
+  const id = useId();
+  const gradId = `area-grad-${id.replace(/[^a-z0-9]/gi, "")}`;
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const n = series.length;
+  const maxVal = n > 0 ? Math.max(...series.map((r) => r.cnt), 1) : 1;
+  const pad = { x: 8, y: 12 };
+  const w = 400;
+  const h = 120;
+  const chartW = w - pad.x * 2;
+  const chartH = h - pad.y * 2;
+
+  const getPoint = (i: number) => {
+    const x = pad.x + (n > 1 ? (i / (n - 1)) * chartW : chartW / 2);
+    const cnt = series[i]?.cnt ?? 0;
+    const y = pad.y + chartH - (maxVal > 0 ? (cnt / maxVal) * chartH : 0);
+    return { x, y, cnt };
+  };
+
+  const areaPath =
+    n > 0
+      ? [
+          `M ${getPoint(0).x} ${h - pad.y}`,
+          `L ${getPoint(0).x} ${getPoint(0).y}`,
+          ...Array.from({ length: n - 1 }, (_, i) => `L ${getPoint(i + 1).x} ${getPoint(i + 1).y}`),
+          `L ${getPoint(n - 1).x} ${h - pad.y}`,
+          "Z",
+        ].join(" ")
+      : "";
+  const linePath =
+    n > 0
+      ? [
+          `M ${getPoint(0).x} ${getPoint(0).y}`,
+          ...Array.from({ length: n - 1 }, (_, i) => `L ${getPoint(i + 1).x} ${getPoint(i + 1).y}`),
+        ].join(" ")
+      : "";
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!svgRef.current || n === 0) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const pixelX = e.clientX - rect.left;
+    const viewBoxX = rect.width > 0 ? (pixelX / rect.width) * w : 0;
+    const t = chartW > 0 ? (viewBoxX - pad.x) / chartW : 0;
+    const i = n > 1 ? Math.round(t * (n - 1)) : 0;
+    const idx = Math.max(0, Math.min(i, n - 1));
+    setHoverIdx(idx);
+  };
+
+  const hoverPoint = hoverIdx != null ? getPoint(hoverIdx) : null;
+  const row = hoverIdx != null ? series[hoverIdx] : null;
+
+  return (
+    <div className="relative w-full">
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${w} ${h}`}
+        className="w-full h-auto block"
+        style={{ minHeight: 140 }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={color} stopOpacity={0.05} />
+          </linearGradient>
+        </defs>
+        <path fill={`url(#${gradId})`} d={areaPath} />
+        <path fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" d={linePath} />
+        {series.map((_, i) => {
+          const p = getPoint(i);
+          return <circle key={i} cx={p.x} cy={p.y} r={p.cnt > 0 ? 3 : 2} fill={color} className="opacity-80" />;
+        })}
+        {hoverPoint && row && (
+          <g>
+            <line x1={hoverPoint.x} y1={hoverPoint.y} x2={hoverPoint.x} y2={h - pad.y} stroke={color} strokeWidth={1} strokeDasharray="4 2" opacity={0.6} />
+            <circle cx={hoverPoint.x} cy={hoverPoint.y} r={5} fill={color} stroke="white" strokeWidth={2} />
+          </g>
+        )}
+      </svg>
+      {row && hoverIdx != null && (
+        <div
+          className="absolute -top-8 px-3 py-1.5 rounded-lg text-xs font-medium shadow-lg border border-slate-200 bg-white text-slate-800 z-10 pointer-events-none whitespace-nowrap"
+          style={{
+            left: `${(() => {
+              const pct = (n > 1 ? (getPoint(hoverIdx).x / w) : 0.5) * 100;
+              return Math.max(20, Math.min(80, pct));
+            })()}%`,
+            transform: "translateX(-50%)",
+          }}
+        >
+          <strong>{formatDate(row.dt)}</strong> — {row.cnt} {valueLabel ? valueLabel : ""}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Блок вкладки с заголовком, итогом, графиком и пилюлями источников (Брони / Сделки по новым / Сделок за период) */
 function TabBlockWithChart({
   title,
   summaryText,
   totalCount,
   timeSeries,
+  chartSubtitle,
+  valueLabel,
   channels,
   totalLeads,
   barColor,
+  period,
 }: {
   title: string;
   summaryText: string;
   totalCount: number;
   timeSeries: TimeSeriesRow[];
+  chartSubtitle?: string;
+  valueLabel?: string;
   channels: ChannelRow[];
   totalLeads: number;
   barColor: string;
+  period?: { start: string; end: string };
 }) {
-  const maxCnt = Math.max(...timeSeries.map((r) => Number(r.cnt ?? 0)), 1);
+  const safeSeries: TimeSeriesRow[] = Array.isArray(timeSeries)
+    ? timeSeries.map((r) => ({ dt: String(r?.dt ?? ""), cnt: Number(r?.cnt ?? 0) }))
+    : [];
+  const maxPoints = 90;
+  const rawSeries = safeSeries.length > maxPoints ? safeSeries.slice(-maxPoints) : safeSeries;
+  const displaySeries =
+    rawSeries.length > 0
+      ? rawSeries
+      : totalCount > 0 && period
+        ? [{ dt: period.start, cnt: totalCount }]
+        : [];
+  const isSynthetic = displaySeries.length > 0 && rawSeries.length === 0 && totalCount > 0 && period;
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-100">
         <h2 className="font-semibold text-slate-800 text-lg">{title}</h2>
-        <p className="text-sm text-slate-500 mt-1">{summaryText}</p>
+        <p className="text-sm text-slate-500 mt-1">
+          {summaryText}
+          {safeSeries.length > 0 && <span className="text-slate-400 ml-1">· {safeSeries.length} дн.</span>}
+          {isSynthetic && <span className="text-amber-600 ml-1">· сводный столбец</span>}
+        </p>
       </div>
-      {timeSeries.length > 0 && (
+      {displaySeries.length > 0 ? (
         <div className="px-5 py-4 border-b border-slate-100">
-          <div className="flex items-end gap-0.5 h-28">
-            {timeSeries.map((row, i) => {
-              const cnt = Number(row.cnt ?? 0);
-              const h = maxCnt > 0 ? Math.max(4, (cnt / maxCnt) * 100) : 0;
-              return (
-                <HoverTooltip key={i} content={<><strong>{formatChartDate(row.dt)}</strong><br />{cnt}</>}>
-                  <div className="flex-1 flex flex-col items-center justify-end min-w-0 cursor-default">
-                    <div className="w-full rounded-t-sm transition-all hover:opacity-90" style={{ height: `${h}%`, background: barColor }} />
-                  </div>
-                </HoverTooltip>
-              );
-            })}
-          </div>
-          <div className="flex justify-between mt-2 text-xs text-slate-400">
-            <span>{formatChartDate(timeSeries[0]?.dt)}</span>
-            <span>{formatChartDate(timeSeries[timeSeries.length - 1]?.dt)}</span>
+          {safeSeries.length > maxPoints && (
+            <p className="text-xs text-slate-400 mb-2">Показаны последние {maxPoints} дней</p>
+          )}
+          {chartSubtitle && (
+            <p className="text-xs text-slate-500 mb-2">{chartSubtitle}</p>
+          )}
+          {isSynthetic ? (
+            <div className="flex items-center justify-center py-6 bg-slate-50/50 rounded-xl">
+              <div className="text-center">
+                <p className="text-2xl font-bold text-slate-700">{totalCount}</p>
+                <p className="text-xs text-slate-500 mt-1">за период</p>
+              </div>
+            </div>
+          ) : (
+            <div className="w-full bg-slate-50/30 rounded-xl p-3">
+              <FunnelTimeSeriesChart series={displaySeries} color={barColor} formatDate={formatChartDate} valueLabel={valueLabel} />
+            </div>
+          )}
+          <div className="flex justify-between mt-3 text-xs text-slate-400">
+            <span>{formatChartDate(displaySeries[0]?.dt)}</span>
+            <span>{formatChartDate(displaySeries[displaySeries.length - 1]?.dt)}</span>
           </div>
         </div>
+      ) : (
+        <div className="px-5 py-6 border-b border-slate-100 text-center bg-slate-50/50 min-h-[120px] flex flex-col justify-center">
+          <p className="text-sm text-slate-500">Нет данных для графика за выбранный период</p>
+          <p className="text-xs text-slate-400 mt-1">Итоги выше рассчитаны по тем же данным</p>
+          {totalCount > 0 && (
+            <p className="text-xs text-slate-400 mt-2">Всего за период: {totalCount} (график по дням не загружен — обновите страницу или проверьте подключение)</p>
+          )}
+        </div>
       )}
-        <div className="px-5 py-4">
+      <div className="px-5 py-4">
         <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Новых заявок за период</p>
         <div className="flex items-center gap-3 mb-3">
           <span className="text-2xl font-bold" style={{ color: FUNNEL_COLORS.target }}>{totalLeads}</span>
@@ -663,7 +808,7 @@ function FunnelPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(`/api/funnel?start=${start}&end=${end}`, SECURITY_FETCH);
+      const r = await fetch(`/api/funnel?start=${start}&end=${end}`, { ...SECURITY_FETCH, cache: "no-store" });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
         throw new Error(d.error || `Ошибка ${r.status}`);
@@ -944,22 +1089,30 @@ function FunnelPageContent() {
                 title="Брони"
                 summaryText={`${s.reservedDeals ?? 0} броней за ук. период`}
                 totalCount={s.reservedDeals ?? 0}
-                timeSeries={data.reservedTimeSeries ?? []}
+                timeSeries={Array.isArray(data.reservedTimeSeries) ? data.reservedTimeSeries : []}
+                chartSubtitle="Брони по дням (дата постановки брони)"
+                valueLabel="брони"
                 channels={data.channels ?? []}
                 totalLeads={s.totalLeads}
                 barColor="#f97316"
+                period={data.period ?? { start, end }}
               />
             </div>
           ) : (tab === "deals_from_new" || tab === "deals") && !loading && s && data ? (
             <div className="lg:col-span-2">
               <TabBlockWithChart
                 title={tab === "deals_from_new" ? "Сделки по новым заявкам" : "Сделок за период"}
-                summaryText={tab === "deals_from_new" ? `${s.totalLeads} заявок → ${s.completedDeals} сделок проведено` : `${s.totalDeals} сделок за период, ${s.completedDeals} проведено`}
+                summaryText={tab === "deals_from_new" ? `${s.totalLeads} заявок → ${s.completedDeals} сделок проведено` : `${s.totalDeals} сделок за период (брони: ${s.reservedDeals ?? 0}, в работе: ${s.inWorkDeals ?? 0}, проведено: ${s.completedDeals})`}
                 totalCount={tab === "deals_from_new" ? s.completedDeals : s.totalDeals}
-                timeSeries={(tab === "deals_from_new" ? data.dealsTimeSeries : data.dealsTimeSeries) ?? []}
+                timeSeries={tab === "deals_from_new"
+                  ? (Array.isArray(data.dealsTimeSeries) ? data.dealsTimeSeries : [])
+                  : (Array.isArray(data.allDealsTimeSeries) ? data.allDealsTimeSeries : [])}
+                chartSubtitle={tab === "deals_from_new" ? "Проведённые сделки по дням — только статус «Проведена»" : "Все сделки по дням — брони, в работе и проведённые"}
+                valueLabel={tab === "deals_from_new" ? "проведено" : "сделок"}
                 channels={data.channels ?? []}
                 totalLeads={s.totalLeads}
                 barColor={tab === "deals_from_new" ? "#059669" : "#6366f1"}
+                period={data.period ?? { start, end }}
               />
             </div>
           ) : (

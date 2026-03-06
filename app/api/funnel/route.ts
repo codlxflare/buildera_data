@@ -7,6 +7,13 @@ const SECURITY_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
 } as const;
 
+/** Нормализация строки ряда: драйвер может вернуть dt/cnt в разном регистре, cnt — number. */
+function normTimeRow(r: Record<string, unknown>): { dt: string; cnt: number } {
+  const dt = r?.dt ?? r?.DT ?? "";
+  const cnt = r?.cnt ?? r?.CNT ?? 0;
+  return { dt: String(dt), cnt: Number(cnt) };
+}
+
 function authFail() {
   return NextResponse.json({ error: "Требуется вход в систему" }, { status: 401, headers: SECURITY_HEADERS });
 }
@@ -165,73 +172,71 @@ export async function GET(req: NextRequest) {
       [start, end, start, end]
     ).catch(() => []);
 
-    // ── 6. Leads over time (daily if <= 62 days, else monthly); dt как строка YYYY-MM-DD / YYYY-MM ─
-    const daysDiff = Math.ceil((new Date(end + "T12:00:00").getTime() - new Date(start + "T12:00:00").getTime()) / 86400000);
-    const timeSeriesRowsRaw = daysDiff <= 62
-      ? await runReadOnlyQuery(
-          `SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS dt, COUNT(*) AS cnt
-           FROM estate_buys WHERE DATE(created_at) >= ? AND DATE(created_at) <= ?
-           GROUP BY DATE(created_at) ORDER BY dt`,
-          [start, end]
-        ).catch(() => [])
-      : await runReadOnlyQuery(
-          `SELECT DATE_FORMAT(created_at, '%Y-%m') AS dt, COUNT(*) AS cnt
-           FROM estate_buys WHERE DATE(created_at) >= ? AND DATE(created_at) <= ?
-           GROUP BY DATE_FORMAT(created_at, '%Y-%m') ORDER BY dt`,
-          [start, end]
-        ).catch(() => []);
+    // ── 6. Leads over time: всегда по дням (YYYY-MM-DD); диапазон через datetime для совместимости с драйвером ─
+    const startDt = `${start} 00:00:00`;
+    const endDt = `${end} 23:59:59`;
+    const timeSeriesRowsRaw = await runReadOnlyQuery(
+      `SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS dt, COUNT(*) AS cnt
+       FROM estate_buys WHERE created_at >= ? AND created_at <= ?
+       GROUP BY DATE(created_at) ORDER BY dt`,
+      [startDt, endDt]
+    ).catch(() => []);
     const timeSeriesRows = Array.isArray(timeSeriesRowsRaw)
-      ? timeSeriesRowsRaw.map((r: Record<string, unknown>) => ({ dt: String(r?.dt ?? ""), cnt: r?.cnt }))
+      ? timeSeriesRowsRaw.map((r: Record<string, unknown>) => normTimeRow(r as Record<string, unknown>))
       : [];
     // Если COUNT вернул 0, но динамика по дням есть — берём сумму (защита от особенностей драйвера/БД)
     if (totalLeads === 0 && timeSeriesRows.length > 0) {
       totalLeads = timeSeriesRows.reduce((s, r) => s + Number(r.cnt ?? 0), 0);
     }
 
-    // ── 7. Deals over time (completed deals); dt как строка ───────────
-    const dealsTimeSeriesRaw = daysDiff <= 62
-      ? await runReadOnlyQuery(
-          `SELECT DATE_FORMAT(deal_date, '%Y-%m-%d') AS dt, COUNT(*) AS cnt
-           FROM estate_deals WHERE deal_status = 150 AND deal_date IS NOT NULL AND DATE(deal_date) >= ? AND DATE(deal_date) <= ?
-           GROUP BY DATE(deal_date) ORDER BY dt`,
-          [start, end]
-        ).catch(() => [])
-      : await runReadOnlyQuery(
-          `SELECT DATE_FORMAT(deal_date, '%Y-%m') AS dt, COUNT(*) AS cnt
-           FROM estate_deals WHERE deal_status = 150 AND deal_date IS NOT NULL AND DATE(deal_date) >= ? AND DATE(deal_date) <= ?
-           GROUP BY DATE_FORMAT(deal_date, '%Y-%m') ORDER BY dt`,
-          [start, end]
-        ).catch(() => []);
+    // ── 7. Deals over time (completed deals): по дням; диапазон через datetime ─
+    const dealsTimeSeriesRaw = await runReadOnlyQuery(
+      `SELECT DATE_FORMAT(COALESCE(deal_date, deal_date_start), '%Y-%m-%d') AS dt, COUNT(*) AS cnt
+       FROM estate_deals
+       WHERE deal_status = 150
+       AND (
+         (deal_date IS NOT NULL AND deal_date >= ? AND deal_date <= ?)
+         OR (deal_date IS NULL AND deal_date_start IS NOT NULL AND deal_date_start >= ? AND deal_date_start <= ?)
+       )
+       GROUP BY DATE(COALESCE(deal_date, deal_date_start)) ORDER BY dt`,
+      [startDt, endDt, startDt, endDt]
+    ).catch(() => []);
     const dealsTimeSeriesRows = Array.isArray(dealsTimeSeriesRaw)
-      ? dealsTimeSeriesRaw.map((r: Record<string, unknown>) => ({ dt: String(r?.dt ?? ""), cnt: r?.cnt }))
+      ? dealsTimeSeriesRaw.map((r: Record<string, unknown>) => normTimeRow(r as Record<string, unknown>))
       : [];
 
-    // ── 8. Reservations (брони) over time: deal_status=105, по deal_date или deal_date_start ─
-    const reservedTimeSeriesRaw = daysDiff <= 62
-      ? await runReadOnlyQuery(
-          `SELECT DATE_FORMAT(COALESCE(deal_date, deal_date_start), '%Y-%m-%d') AS dt, COUNT(*) AS cnt
-           FROM estate_deals
-           WHERE deal_status = 105
-           AND (
-             (deal_date IS NOT NULL AND DATE(deal_date) >= ? AND DATE(deal_date) <= ?)
-             OR (deal_date IS NULL AND deal_date_start IS NOT NULL AND DATE(deal_date_start) >= ? AND DATE(deal_date_start) <= ?)
-           )
-           GROUP BY DATE(COALESCE(deal_date, deal_date_start)) ORDER BY dt`,
-          [start, end, start, end]
-        ).catch(() => [])
-      : await runReadOnlyQuery(
-          `SELECT DATE_FORMAT(COALESCE(deal_date, deal_date_start), '%Y-%m') AS dt, COUNT(*) AS cnt
-           FROM estate_deals
-           WHERE deal_status = 105
-           AND (
-             (deal_date IS NOT NULL AND DATE(deal_date) >= ? AND DATE(deal_date) <= ?)
-             OR (deal_date IS NULL AND deal_date_start IS NOT NULL AND DATE(deal_date_start) >= ? AND DATE(deal_date_start) <= ?)
-           )
-           GROUP BY DATE_FORMAT(COALESCE(deal_date, deal_date_start), '%Y-%m') ORDER BY dt`,
-          [start, end, start, end]
-        ).catch(() => []);
+    // ── 8. Reservations (брони) over time: по дням; диапазон через datetime ─
+    const reservedTimeSeriesRaw = await runReadOnlyQuery(
+      `SELECT DATE_FORMAT(COALESCE(deal_date, deal_date_start, reserve_date_start), '%Y-%m-%d') AS dt, COUNT(*) AS cnt
+       FROM estate_deals
+       WHERE deal_status = 105
+       AND (
+         (deal_date IS NOT NULL AND deal_date >= ? AND deal_date <= ?)
+         OR (deal_date IS NULL AND deal_date_start IS NOT NULL AND deal_date_start >= ? AND deal_date_start <= ?)
+         OR (deal_date IS NULL AND deal_date_start IS NULL AND reserve_date_start IS NOT NULL AND reserve_date_start >= ? AND reserve_date_start <= ?)
+       )
+       GROUP BY DATE(COALESCE(deal_date, deal_date_start, reserve_date_start)) ORDER BY dt`,
+      [startDt, endDt, startDt, endDt, startDt, endDt]
+    ).catch(() => []);
     const reservedTimeSeriesRows = Array.isArray(reservedTimeSeriesRaw)
-      ? reservedTimeSeriesRaw.map((r: Record<string, unknown>) => ({ dt: String(r?.dt ?? ""), cnt: r?.cnt }))
+      ? reservedTimeSeriesRaw.map((r: Record<string, unknown>) => normTimeRow(r as Record<string, unknown>))
+      : [];
+
+    // ── 9. All deals over time (брони + в работе + проведённые) для вкладки «Сделок за период» ─
+    const allDealsTimeSeriesRaw = await runReadOnlyQuery(
+      `SELECT DATE_FORMAT(COALESCE(deal_date, deal_date_start, reserve_date_start), '%Y-%m-%d') AS dt, COUNT(*) AS cnt
+       FROM estate_deals
+       WHERE deal_status IN (105, 110, 150)
+       AND (
+         (deal_date IS NOT NULL AND deal_date >= ? AND deal_date <= ?)
+         OR (deal_date IS NULL AND deal_date_start IS NOT NULL AND deal_date_start >= ? AND deal_date_start <= ?)
+         OR (deal_date IS NULL AND deal_date_start IS NULL AND reserve_date_start IS NOT NULL AND reserve_date_start >= ? AND reserve_date_start <= ?)
+       )
+       GROUP BY DATE(COALESCE(deal_date, deal_date_start, reserve_date_start)) ORDER BY dt`,
+      [startDt, endDt, startDt, endDt, startDt, endDt]
+    ).catch(() => []);
+    const allDealsTimeSeriesRows = Array.isArray(allDealsTimeSeriesRaw)
+      ? allDealsTimeSeriesRaw.map((r: Record<string, unknown>) => normTimeRow(r as Record<string, unknown>))
       : [];
 
     const completedCount = Number(deals.completed ?? 0);
@@ -260,6 +265,7 @@ export async function GET(req: NextRequest) {
       timeSeries: timeSeriesRows,
       dealsTimeSeries: dealsTimeSeriesRows,
       reservedTimeSeries: reservedTimeSeriesRows,
+      allDealsTimeSeries: allDealsTimeSeriesRows,
     }, { headers: SECURITY_HEADERS });
   } catch (err) {
     return NextResponse.json(

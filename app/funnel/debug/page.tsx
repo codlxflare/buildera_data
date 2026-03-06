@@ -231,6 +231,48 @@ export default function FunnelDebugPage() {
               />
             </Section>
 
+            <Section title="Ряды для графиков воронки (timeSeries, dealsTimeSeries, reservedTimeSeries)">
+              {(() => {
+                const info = data.charts_info as Record<string, number> | undefined;
+                const ts = (data.timeSeries as { dt: string; cnt: number }[]) ?? [];
+                const dts = (data.dealsTimeSeries as { dt: string; cnt: number }[]) ?? [];
+                const rts = (data.reservedTimeSeries as { dt: string; cnt: number }[]) ?? [];
+                return (
+                  <>
+                    <p className="text-sm text-slate-600 mb-2">
+                      Точно такие же запросы выполняет основной <code className="bg-slate-100 px-1 rounded">/api/funnel</code> для графиков на вкладках.
+                    </p>
+                    <ul className="text-sm text-slate-700 space-y-1 mb-3">
+                      <li><strong>timeSeries</strong> (заявки по дням): {info?.timeSeries_points ?? ts.length} точек {info?.timeSeries_error != null && <span className="text-red-600"> — ошибка: {String(info.timeSeries_error)}</span>}</li>
+                      <li><strong>dealsTimeSeries</strong> (проведённые сделки по дням): {info?.dealsTimeSeries_points ?? dts.length} точек {info?.dealsTimeSeries_error != null && <span className="text-red-600"> — ошибка: {String(info.dealsTimeSeries_error)}</span>}</li>
+                      <li><strong>reservedTimeSeries</strong> (брони по дням): {info?.reservedTimeSeries_points ?? rts.length} точек {info?.reservedTimeSeries_error != null && <span className="text-red-600"> — ошибка: {String(info.reservedTimeSeries_error)}</span>}</li>
+                    </ul>
+                    {ts.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-xs font-medium text-slate-500 mb-1">timeSeries (первые 5):</p>
+                        <pre className="text-xs bg-slate-50 p-2 rounded overflow-auto">{JSON.stringify(ts.slice(0, 5), null, 2)}</pre>
+                      </div>
+                    )}
+                    {dts.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-xs font-medium text-slate-500 mb-1">dealsTimeSeries (первые 5):</p>
+                        <pre className="text-xs bg-slate-50 p-2 rounded overflow-auto">{JSON.stringify(dts.slice(0, 5), null, 2)}</pre>
+                      </div>
+                    )}
+                    {dts.length === 0 && (data.deals as Record<string, unknown>)?.in_work_reserved_completed && (
+                      <p className="text-xs text-amber-600">dealsTimeSeries пустой при ненулевых проведённых — проверьте фильтр по дате (deal_date / deal_date_start) и deal_status = 150.</p>
+                    )}
+                    {rts.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-slate-500 mb-1">reservedTimeSeries (первые 5):</p>
+                        <pre className="text-xs bg-slate-50 p-2 rounded overflow-auto">{JSON.stringify(rts.slice(0, 5), null, 2)}</pre>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </Section>
+
             <Section title="Полный ответ API (JSON)">
               <pre className="text-xs bg-slate-100 p-3 rounded-lg overflow-auto max-h-96 whitespace-pre-wrap break-all">
                 {JSON.stringify(data, null, 2)}

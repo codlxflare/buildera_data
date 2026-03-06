@@ -489,12 +489,16 @@ interface AiChartBuilderProps {
   onClose: () => void;
 }
 
+/** Блок ответа ИИ с уточняющими вариантами (показываем в виде чата вместо ошибки). */
+type ClarifyBlock = { userPrompt: string; assistantReply: string; options: string[] };
+
 function AiChartBuilderModal({ onAdd, onClose }: AiChartBuilderProps) {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [previewChart, setPreviewChart] = useState<ChartSpec | null>(null);
   const [previewTitle, setPreviewTitle] = useState("");
   const [error, setError] = useState("");
+  const [clarifyBlock, setClarifyBlock] = useState<ClarifyBlock | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   async function generate() {
@@ -505,12 +509,16 @@ function AiChartBuilderModal({ onAdd, onClose }: AiChartBuilderProps) {
     setPreviewChart(null);
     abortRef.current = new AbortController();
 
+    const fullPrompt = `Нужна диаграмма по данным из БД MacroData. Запрос: ${trimmed}. Сформируй SQL-запрос к БД для получения этих данных — по результату будет построена диаграмма.`;
+    const history = clarifyBlock
+      ? [{ role: "user" as const, content: clarifyBlock.userPrompt }, { role: "assistant" as const, content: clarifyBlock.assistantReply }]
+      : [];
+
     try {
-      const fullPrompt = `Создай диаграмму по запросу: "${trimmed}". Верни ТОЛЬКО блок \`\`\`chart с JSON-спецификацией диаграммы на основе реальных данных из БД MacroData.`;
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: fullPrompt, stream: true, history: [] }),
+        body: JSON.stringify({ message: fullPrompt, stream: true, history }),
         signal: abortRef.current.signal,
         credentials: "include",
       });
@@ -524,6 +532,7 @@ function AiChartBuilderModal({ onAdd, onClose }: AiChartBuilderProps) {
       let fullReply = "";
       let resolvedChart: ChartSpec | null = null;
       let resolvedTitle = "";
+      let lastClarifyOptions: string[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -534,16 +543,19 @@ function AiChartBuilderModal({ onAdd, onClose }: AiChartBuilderProps) {
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           try {
-            const payload = JSON.parse(line.slice(6)) as { t?: string; c?: string; reply?: string; charts?: ChartSpec[] };
+            const payload = JSON.parse(line.slice(6)) as {
+              t?: string; c?: string; reply?: string; charts?: ChartSpec[];
+              clarify?: { message?: string; options?: string[] };
+              suggestions?: string[];
+            };
             if (payload.t === "e") {
               if (payload.charts?.length) {
                 resolvedChart = payload.charts[0];
                 resolvedTitle = payload.charts[0].title || trimmed;
               }
-              if (payload.reply) {
-                // Final server reply already has placeholders replaced.
-                fullReply = payload.reply;
-              }
+              if (payload.reply) fullReply = payload.reply;
+              const opts = payload.clarify?.options ?? payload.suggestions ?? [];
+              if (opts.length > 0) lastClarifyOptions = opts;
             } else if (payload.t === "d" && payload.c) {
               fullReply += payload.c;
             }
@@ -551,24 +563,44 @@ function AiChartBuilderModal({ onAdd, onClose }: AiChartBuilderProps) {
         }
       }
 
-      if (!resolvedChart) {
+      if (resolvedChart) {
+        setPreviewChart(resolvedChart);
+        setPreviewTitle(resolvedTitle || trimmed);
+        setClarifyBlock(null);
+      } else if (lastClarifyOptions.length > 0 && fullReply.trim()) {
+        setClarifyBlock({ userPrompt: clarifyBlock?.userPrompt ?? trimmed, assistantReply: fullReply.trim(), options: lastClarifyOptions });
+      } else {
         const match = fullReply.match(/```chart\s*([\s\S]*?)```/);
         if (match) {
           try {
-            const spec = JSON.parse(match[1]) as ChartSpec;
-            resolvedChart = spec;
-            resolvedTitle = spec.title || trimmed;
+            const parsed = JSON.parse(match[1]) as Record<string, unknown>;
+            if (parsed.error && typeof parsed.error === "string") {
+              const opts = Array.isArray(parsed.suggestions)
+                ? (parsed.suggestions as unknown[]).filter((s): s is string => typeof s === "string").slice(0, 6)
+                : [];
+              setClarifyBlock({
+                userPrompt: clarifyBlock?.userPrompt ?? trimmed,
+                assistantReply: parsed.error,
+                options: opts.length > 0 ? opts : ["Покажи заявки по каналам за весь период", "Покажи сделки по каналам за весь период", "Покажи конверсию по каналам за весь период"],
+              });
+            } else {
+              const spec = parsed as unknown as ChartSpec;
+              if (spec.data && Array.isArray(spec.data) && spec.data.length > 0) {
+                resolvedChart = spec;
+                resolvedTitle = (spec.title as string) || trimmed;
+                setPreviewChart(resolvedChart);
+                setPreviewTitle(resolvedTitle || trimmed);
+                setClarifyBlock(null);
+              } else {
+                setError("Не удалось разобрать спецификацию диаграммы. Попробуйте переформулировать запрос.");
+              }
+            }
           } catch {
             setError("Не удалось разобрать спецификацию диаграммы. Попробуйте переформулировать запрос.");
           }
         } else {
           setError("ИИ не смог создать диаграмму. Попробуйте уточнить запрос.");
         }
-      }
-
-      if (resolvedChart) {
-        setPreviewChart(resolvedChart);
-        setPreviewTitle(resolvedTitle || trimmed);
       }
     } catch (err) {
       if (err instanceof Error && err.name !== "AbortError") {
@@ -638,6 +670,40 @@ function AiChartBuilderModal({ onAdd, onClose }: AiChartBuilderProps) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           {error}
+        </div>
+      )}
+
+      {clarifyBlock && !previewChart && (
+        <div className="rounded-xl border border-[#e8edf2] bg-[#fafbfc] overflow-hidden">
+          <div className="px-4 py-3 border-b border-[#e8edf2]">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Диалог с ИИ</p>
+          </div>
+          <div className="p-4 space-y-3">
+            <div>
+              <p className="text-xs text-slate-400 mb-1">Вы</p>
+              <p className="text-sm text-slate-800 rounded-lg bg-white border border-[#e8edf2] px-3 py-2">{clarifyBlock.userPrompt}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 mb-1">ИИ</p>
+              <p className="text-sm text-slate-800 whitespace-pre-wrap">{clarifyBlock.assistantReply}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-accent mb-2">Уточните запрос — выберите вариант:</p>
+              <div className="flex flex-wrap gap-2">
+                {clarifyBlock.options.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setPrompt(opt)}
+                    className="px-3 py-2 rounded-xl bg-accent/10 hover:bg-accent/15 text-accent text-xs font-medium border border-accent/20 hover:border-accent/40 transition-all"
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-slate-400 mt-2">Выбранный вариант подставится в поле выше. Нажмите «Создать диаграмму» ещё раз.</p>
+            </div>
+          </div>
         </div>
       )}
 

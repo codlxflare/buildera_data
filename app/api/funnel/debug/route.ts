@@ -149,6 +149,46 @@ export async function GET(req: NextRequest) {
     `SELECT house_id, name, public_house_name FROM estate_houses LIMIT 30`
   );
 
+  // ─── 8. Ряды для графиков (как в основном /api/funnel); диапазон через datetime ─
+  const startDt = `${start} 00:00:00`;
+  const endDt = `${end} 23:59:59`;
+  const timeSeriesRows = await run<Record<string, unknown>[]>(
+    `SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS dt, COUNT(*) AS cnt
+     FROM estate_buys WHERE created_at >= ? AND created_at <= ?
+     GROUP BY DATE(created_at) ORDER BY dt`,
+    [startDt, endDt]
+  );
+  const dealsTimeSeriesRows = await run<Record<string, unknown>[]>(
+    `SELECT DATE_FORMAT(COALESCE(deal_date, deal_date_start), '%Y-%m-%d') AS dt, COUNT(*) AS cnt
+     FROM estate_deals
+     WHERE deal_status = 150
+     AND (
+       (deal_date IS NOT NULL AND deal_date >= ? AND deal_date <= ?)
+       OR (deal_date IS NULL AND deal_date_start IS NOT NULL AND deal_date_start >= ? AND deal_date_start <= ?)
+     )
+     GROUP BY DATE(COALESCE(deal_date, deal_date_start)) ORDER BY dt`,
+    [startDt, endDt, startDt, endDt]
+  );
+  const reservedTimeSeriesRows = await run<Record<string, unknown>[]>(
+    `SELECT DATE_FORMAT(COALESCE(deal_date, deal_date_start, reserve_date_start), '%Y-%m-%d') AS dt, COUNT(*) AS cnt
+     FROM estate_deals
+     WHERE deal_status = 105
+     AND (
+       (deal_date IS NOT NULL AND deal_date >= ? AND deal_date <= ?)
+       OR (deal_date IS NULL AND deal_date_start IS NOT NULL AND deal_date_start >= ? AND deal_date_start <= ?)
+       OR (deal_date IS NULL AND deal_date_start IS NULL AND reserve_date_start IS NOT NULL AND reserve_date_start >= ? AND reserve_date_start <= ?)
+     )
+     GROUP BY DATE(COALESCE(deal_date, deal_date_start, reserve_date_start)) ORDER BY dt`,
+    [startDt, endDt, startDt, endDt, startDt, endDt]
+  );
+
+  function norm(r: Record<string, unknown>): { dt: string; cnt: number } {
+    return { dt: String(r?.dt ?? r?.DT ?? ""), cnt: Number(r?.cnt ?? r?.CNT ?? 0) };
+  }
+  const timeSeries = (timeSeriesRows.ok && Array.isArray(timeSeriesRows.data) ? timeSeriesRows.data : []).map(norm);
+  const dealsTimeSeries = (dealsTimeSeriesRows.ok && Array.isArray(dealsTimeSeriesRows.data) ? dealsTimeSeriesRows.data : []).map(norm);
+  const reservedTimeSeries = (reservedTimeSeriesRows.ok && Array.isArray(reservedTimeSeriesRows.data) ? reservedTimeSeriesRows.data : []).map(norm);
+
   const out: Record<string, unknown> = {
     period,
     legend: {
@@ -178,6 +218,17 @@ export async function GET(req: NextRequest) {
       by_deal_house_id: houseFromDeals.ok ? houseFromDeals.data : houseFromDeals.error,
       by_lead_house_id: houseFromLeads.ok ? houseFromLeads.data : houseFromLeads.error,
       house_names: houseNames.ok ? houseNames.data : houseNames.error,
+    },
+    timeSeries,
+    dealsTimeSeries,
+    reservedTimeSeries,
+    charts_info: {
+      timeSeries_points: timeSeries.length,
+      dealsTimeSeries_points: dealsTimeSeries.length,
+      reservedTimeSeries_points: reservedTimeSeries.length,
+      timeSeries_error: !timeSeriesRows.ok ? timeSeriesRows.error : undefined,
+      dealsTimeSeries_error: !dealsTimeSeriesRows.ok ? dealsTimeSeriesRows.error : undefined,
+      reservedTimeSeries_error: !reservedTimeSeriesRows.ok ? reservedTimeSeriesRows.error : undefined,
     },
   };
 

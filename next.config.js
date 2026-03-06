@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 // Standalone только для Docker (NEXT_STANDALONE=true при сборке). На сервере с PM2 используем next start без standalone.
+// Чтобы избежать "Failed to find Server Action" после деплоя: задайте NEXT_SERVER_ACTIONS_ENCRYPTION_KEY (openssl rand -base64 32) в .env при сборке.
 const nextConfig = {
   reactStrictMode: true,
   ...(process.env.NEXT_STANDALONE === "true" ? { output: "standalone" } : {}),

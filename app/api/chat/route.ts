@@ -343,7 +343,21 @@ export async function POST(req: NextRequest) {
 
     let sql = dbConfigured ? extractSqlFromReply(rawReply) : null;
 
-    log("SQL_EXTRACTED", { extractedSql: sql ?? "(нет блока sql)" });
+    if (!sql && dbConfigured) {
+      const chartMatch = rawReply.match(/```chart\s*([\s\S]*?)```/);
+      if (chartMatch) {
+        try {
+          const parsed = JSON.parse(chartMatch[1].trim()) as Record<string, unknown>;
+          if (typeof parsed.suggested_sql === "string" && parsed.suggested_sql.trim().length > 0) {
+            sql = parsed.suggested_sql.trim();
+            log("SQL_EXTRACTED", { extractedSql: sql.slice(0, 200), source: "chart_suggested_sql" });
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    if (!sql) log("SQL_EXTRACTED", { extractedSql: "(нет блока sql)" });
 
     if (sql) {
       let result = await runUserSql(sql);
