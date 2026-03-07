@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import TopNav from "@/app/components/TopNav";
 import HoverTooltip from "@/app/components/HoverTooltip";
+import { prefetchManagerDrill, prefetchHouseDrill, prefetchChannelDrill, getFunnelData, setFunnelData } from "@/app/lib/dashboardCache";
 
 const SECURITY_FETCH = { credentials: "include" as RequestCredentials };
 
@@ -62,6 +63,7 @@ interface ChannelRow {
 }
 
 interface HouseRow {
+  house_id?: number | null;
   house: string;
   total: number;
   new_leads: number;
@@ -70,6 +72,7 @@ interface HouseRow {
 }
 
 interface ManagerRow {
+  manager_id?: number | null;
   manager: string;
   deals_count: number;
   completed: number;
@@ -297,8 +300,9 @@ function NewLeadsFunnelBlock(props: {
   channels: ChannelRow[];
   funnelLeads: FunnelLeadByStatus[];
   summary: Summary;
+  periodYm?: string;
 }) {
-  const { totalLeads, channels, funnelLeads, summary } = props;
+  const { totalLeads, channels, funnelLeads, summary, periodYm } = props;
   const getCnt = (statusId: number) => funnelLeads.find((r) => r.status_id === statusId)?.cnt ?? 0;
   const nonTarget = getCnt(3);
   const targetLeads = totalLeads - nonTarget;
@@ -320,13 +324,19 @@ function NewLeadsFunnelBlock(props: {
         <div className="flex flex-wrap gap-2">
           {channels.slice(0, 12).map((ch, i) => {
             const pct = totalLeads ? (ch.leads / totalLeads) * 100 : 0;
-            return (
-              <HoverTooltip key={i} content={<><strong>{ch.channel}</strong><br />{ch.leads} заявок · {fmtPct(pct)}</>}>
-                <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 cursor-default">
-                  <span className="truncate max-w-[100px]">{ch.channel}</span>
-                  <span className="ml-1 shrink-0">{ch.leads} ({fmtPct(pct)})</span>
-                </span>
-              </HoverTooltip>
+            const channelName = String(ch.channel ?? "");
+            const returnTo = periodYm ? `/funnel?period=${periodYm}` : "";
+            const drillHref = periodYm && channelName ? `/dashboard/drill/channel?channel=${encodeURIComponent(channelName)}&period=${encodeURIComponent(periodYm)}${returnTo ? `&return=${encodeURIComponent(returnTo)}` : ""}` : null;
+            return drillHref ? (
+              <Link key={i} href={drillHref} className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 hover:bg-indigo-100 hover:border-indigo-200 transition-colors" onMouseEnter={() => periodYm && prefetchChannelDrill(channelName, periodYm)}>
+                <span className="truncate max-w-[100px]">{ch.channel}</span>
+                <span className="ml-1 shrink-0">{ch.leads} ({fmtPct(pct)})</span>
+              </Link>
+            ) : (
+              <span key={i} className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 cursor-default">
+                <span className="truncate max-w-[100px]">{ch.channel}</span>
+                <span className="ml-1 shrink-0">{ch.leads} ({fmtPct(pct)})</span>
+              </span>
             );
           })}
         </div>
@@ -638,12 +648,19 @@ function TabBlockWithChart({
           <div className="flex flex-wrap gap-2">
             {channels.slice(0, 10).map((ch, i) => {
               const pct = totalLeads ? (ch.leads / totalLeads) * 100 : 0;
-              return (
-                <HoverTooltip key={i} content={<><strong>{ch.channel}</strong><br />{ch.leads} заявок · {fmtPct(pct)}</>}>
-                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 cursor-default">
-                    {ch.leads} ({fmtPct(pct)})
-                  </span>
-                </HoverTooltip>
+              const channelName = String(ch.channel ?? "");
+              const periodYm = period?.start?.slice(0, 7);
+              const returnTo = periodYm ? `/funnel?period=${periodYm}` : "";
+              const drillHref = periodYm && channelName ? `/dashboard/drill/channel?channel=${encodeURIComponent(channelName)}&period=${encodeURIComponent(periodYm)}${returnTo ? `&return=${encodeURIComponent(returnTo)}` : ""}` : null;
+              return drillHref ? (
+                <Link key={i} href={drillHref} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 hover:bg-indigo-100 hover:border-indigo-200 transition-colors">
+                  <span className="truncate max-w-[90px]">{ch.channel}</span>
+                  <span className="ml-1 shrink-0">{ch.leads} ({fmtPct(pct)})</span>
+                </Link>
+              ) : (
+                <span key={i} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 cursor-default">
+                  {ch.leads} ({fmtPct(pct)})
+                </span>
               );
             })}
           </div>
@@ -662,8 +679,18 @@ interface DayActivity {
   reserved: number;
 }
 
-/** Календарь: в какие дни что было проведено — заявки, сделки, брони */
-function EventsCalendar({ byDay, start, end }: { byDay: Record<string, DayActivity>; start: string; end: string }) {
+/** Календарь: в какие дни что было проведено — заявки, сделки, брони. При клике по дню с данными — провал в детализацию. */
+function EventsCalendar({
+  byDay,
+  start,
+  end,
+  onDayClick,
+}: {
+  byDay: Record<string, DayActivity>;
+  start: string;
+  end: string;
+  onDayClick?: (dateStr: string) => void;
+}) {
   const startDate = new Date(start + "T12:00:00");
   const endDate = new Date(end + "T12:00:00");
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -703,7 +730,7 @@ function EventsCalendar({ byDay, start, end }: { byDay: Record<string, DayActivi
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="font-semibold text-slate-800 text-lg">Календарь</h2>
-          <p className="text-xs text-slate-500 mt-0.5">В какие дни что было проведено: заявки, сделки, брони</p>
+          <p className="text-xs text-slate-500 mt-0.5">В какие дни что было проведено: заявки, сделки, брони. Клик по дню — детализация</p>
         </div>
         <div className="flex gap-3 text-xs">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#6366f1]" /> заявки</span>
@@ -752,12 +779,21 @@ function EventsCalendar({ byDay, start, end }: { byDay: Record<string, DayActivi
                         )}
                       </>
                     );
+                    const clickable = active && cell.dateStr && onDayClick;
                     const cellClassName = `w-10 h-10 flex flex-col items-center justify-center rounded text-xs ${
                       cell.day === 0 ? "invisible" : active ? (cell.isToday ? "bg-[#4f46e5] text-white" : "bg-slate-50 border border-slate-200") : "bg-slate-100 text-slate-400"
-                    } ${cell.dateStr ? "cursor-default" : ""}`;
-                    return tooltipContent
-                      ? <HoverTooltip key={i} content={tooltipContent}><div className={cellClassName}>{cellInner}</div></HoverTooltip>
-                      : <div key={i} className={cellClassName}>{cellInner}</div>;
+                    } ${clickable ? "cursor-pointer hover:ring-2 hover:ring-[#6366f1] hover:ring-offset-1" : cell.dateStr ? "cursor-default" : ""}`;
+                    const cellEl = (
+                      <div
+                        key={i}
+                        className={cellClassName}
+                        role={clickable ? "button" : undefined}
+                        onClick={clickable ? () => onDayClick(cell.dateStr) : undefined}
+                      >
+                        {cellInner}
+                      </div>
+                    );
+                    return tooltipContent ? <HoverTooltip key={i} content={tooltipContent}>{cellEl}</HoverTooltip> : cellEl;
                   })}
                 </div>
               </div>
@@ -779,6 +815,10 @@ function FunnelPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
+  const [dayModalDate, setDayModalDate] = useState<string | null>(null);
+  const [dayModalData, setDayModalData] = useState<{ leads: { lead_id: number; created_at: string; channel: string; client_name: string; client_phone: string; status_name: string; manager_name: string; has_deal: number }[]; deals: { deal_id: number; deal_date: string; deal_sum: number; client_name: string; flat_number: string }[]; reserved: { deal_id: number; deal_sum: number; client_name: string; flat_number: string }[] } | null>(null);
+  const [dayModalLoading, setDayModalLoading] = useState(false);
+  const [dayModalError, setDayModalError] = useState<string | null>(null);
 
   // Период с дашборда: /funnel?period=YYYY-MM — выставить тот же месяц
   useEffect(() => {
@@ -805,7 +845,13 @@ function FunnelPageContent() {
 
   const load = useCallback(async () => {
     if (!authenticated) return;
-    setLoading(true);
+    const fromCache = getFunnelData(start, end);
+    if (fromCache) {
+      setData(fromCache as unknown as FunnelData);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError(null);
     try {
       const r = await fetch(`/api/funnel?start=${start}&end=${end}`, { ...SECURITY_FETCH, cache: "no-store" });
@@ -813,9 +859,12 @@ function FunnelPageContent() {
         const d = await r.json().catch(() => ({}));
         throw new Error(d.error || `Ошибка ${r.status}`);
       }
-      setData(await r.json());
+      const json = (await r.json()) as FunnelData;
+      setFunnelData(start, end, json as unknown as Record<string, unknown>);
+      setData(json);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка загрузки");
+      if (!fromCache) setData(null);
     } finally {
       setLoading(false);
     }
@@ -824,6 +873,41 @@ function FunnelPageContent() {
   useEffect(() => {
     if (authenticated) load();
   }, [load, authenticated]);
+
+  const handleDayClick = useCallback(async (dateStr: string) => {
+    setDayModalDate(dateStr);
+    setDayModalData(null);
+    setDayModalError(null);
+    setDayModalLoading(true);
+    try {
+      const r = await fetch(`/api/funnel/day?date=${encodeURIComponent(dateStr)}`, SECURITY_FETCH);
+      const empty = { leads: [], deals: [], reserved: [] };
+      if (r.ok) {
+        const json = await r.json();
+        setDayModalData({
+          leads: Array.isArray(json.leads) ? json.leads : [],
+          deals: Array.isArray(json.deals) ? json.deals : [],
+          reserved: Array.isArray(json.reserved) ? json.reserved : [],
+        });
+        setDayModalError(null);
+      } else {
+        const err = await r.json().catch(() => ({}));
+        setDayModalError((err as { error?: string }).error || `Ошибка ${r.status}`);
+        setDayModalData(empty);
+      }
+    } catch {
+      setDayModalError("Ошибка загрузки");
+      setDayModalData({ leads: [], deals: [], reserved: [] });
+    } finally {
+      setDayModalLoading(false);
+    }
+  }, []);
+
+  const closeDayModal = useCallback(() => {
+    setDayModalDate(null);
+    setDayModalData(null);
+    setDayModalError(null);
+  }, []);
 
   if (!authChecked) {
     return (
@@ -888,54 +972,71 @@ function FunnelPageContent() {
   const maxLeads = Math.max(...topChannels.map((c) => c.leads), 1);
   void totalForFunnel;
 
+  const periodYm = String(start).slice(0, 7);
   return (
     <div className="min-h-screen flex flex-col bg-[#f8fafc]">
       <TopNav
         title="Воронка продаж"
         subtitle={loading ? "Загрузка…" : data ? `${start} — ${end}` : ""}
+        className="border-b border-slate-200/80 bg-white shadow-sm"
+        containerClassName="py-3"
         icon={
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#6366f1] to-[#4f46e5] flex items-center justify-center shadow-sm">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#6366f1] to-[#4f46e5] flex items-center justify-center shadow-sm shrink-0">
             <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
             </svg>
           </div>
         }
         actions={(
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1 flex-wrap">
-              {PERIOD_PRESETS.map((preset) => (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => {
-                    const [s, e] = preset.getRange();
-                    setStart(s);
-                    setEnd(e);
-                  }}
-                  className="!h-8 px-2.5 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-transparent hover:border-slate-200 transition-colors"
-                >
-                  {preset.label}
-                </button>
-              ))}
+          <div className="flex flex-wrap items-center gap-4 lg:gap-5">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium text-slate-500 uppercase tracking-wider hidden sm:inline">Быстрый период</span>
+              <div className="flex items-center gap-1 rounded-lg bg-slate-50 px-1.5 py-1 border border-slate-200/80">
+                {PERIOD_PRESETS.map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => {
+                      const [s, e] = preset.getRange();
+                      setStart(s);
+                      setEnd(e);
+                    }}
+                    className="h-8 px-3 rounded-md text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-200 transition-all"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex items-center gap-1.5 text-sm text-slate-500">
-              <span className="hidden sm:inline text-xs font-medium text-slate-400">Период:</span>
-              <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="ui-input !h-8 !w-32 !px-2 text-sm" />
-              <span className="text-slate-300">—</span>
-              <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="ui-input !h-8 !w-32 !px-2 text-sm" />
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Период</span>
+              <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="h-9 w-[130px] rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 focus:border-[#6366f1] focus:ring-1 focus:ring-[#6366f1] focus:outline-none" />
+              <span className="text-slate-300 font-medium">—</span>
+              <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="h-9 w-[130px] rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 focus:border-[#6366f1] focus:ring-1 focus:ring-[#6366f1] focus:outline-none" />
             </div>
-            <button onClick={load} disabled={loading} className="ui-btn ui-btn-secondary !h-8">
-              <svg className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              <span className="hidden sm:inline">Обновить</span>
-            </button>
-            <Link href="/dashboard" className="ui-btn ui-btn-secondary !h-8">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              <span className="hidden sm:inline">Дашборды</span>
-            </Link>
+            <div className="flex items-center gap-2">
+              <button onClick={load} disabled={loading} className="h-9 px-3 rounded-lg text-sm font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 inline-flex items-center gap-1.5">
+                <svg className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span className="hidden sm:inline">Обновить</span>
+              </button>
+              <Link href="/dashboard" className="h-9 px-3 rounded-lg text-sm font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1.5">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <span className="hidden sm:inline">Дашборды</span>
+              </Link>
+            </div>
+            <div className="flex items-center gap-2 pl-4 border-l border-slate-200">
+              <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Отчёты</span>
+              <nav className="flex items-center gap-1 flex-wrap">
+                <Link href={`/dashboard/detail?metric=deals&period=${encodeURIComponent(periodYm)}`} className="inline-flex items-center justify-center h-8 px-2.5 rounded-lg text-xs font-medium text-slate-600 hover:text-[#6366f1] hover:bg-indigo-50 border border-transparent hover:border-indigo-100 transition-colors">Сделки</Link>
+                <Link href={`/dashboard/detail?metric=revenue&period=${encodeURIComponent(periodYm)}`} className="inline-flex items-center justify-center h-8 px-2.5 rounded-lg text-xs font-medium text-slate-600 hover:text-[#6366f1] hover:bg-indigo-50 border border-transparent hover:border-indigo-100 transition-colors">Выручка</Link>
+                <Link href={`/dashboard/detail?metric=leads&period=${encodeURIComponent(periodYm)}`} className="inline-flex items-center justify-center h-8 px-2.5 rounded-lg text-xs font-medium text-slate-600 hover:text-[#6366f1] hover:bg-indigo-50 border border-transparent hover:border-indigo-100 transition-colors">Заявки</Link>
+                <Link href={`/dashboard/detail?metric=debt&period=${encodeURIComponent(periodYm)}`} className="inline-flex items-center justify-center h-8 px-2.5 rounded-lg text-xs font-medium text-slate-600 hover:text-[#6366f1] hover:bg-indigo-50 border border-transparent hover:border-indigo-100 transition-colors">К оплате</Link>
+              </nav>
+            </div>
           </div>
         )}
       />
@@ -1011,30 +1112,38 @@ function FunnelPageContent() {
               return (
                 <>
                   {bestConvChannel && (
-                    <div className="bg-white rounded-xl border border-slate-200/80 px-4 py-3 shadow-sm">
+                    <Link href={`/dashboard/drill/channel?channel=${encodeURIComponent(String(bestConvChannel.channel))}&period=${encodeURIComponent(periodYm)}&return=${encodeURIComponent(`/funnel?period=${periodYm}`)}`} className="bg-white rounded-xl border border-slate-200/80 px-4 py-3 shadow-sm block hover:border-indigo-200 hover:shadow-md transition-all" onMouseEnter={() => prefetchChannelDrill(String(bestConvChannel.channel), periodYm)}>
                       <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Лучшая конверсия</p>
-                      <p className="text-sm font-semibold text-slate-800 truncate" title={bestConvChannel.channel}>{bestConvChannel.channel}</p>
+                      <p className="text-sm font-semibold text-slate-800 truncate">{bestConvChannel.channel}</p>
                       <p className="text-xs text-emerald-600 font-medium">{fmtPct(Number(bestConvChannel.conv_pct ?? 0))} · {bestConvChannel.leads} заявок</p>
-                    </div>
+                    </Link>
                   )}
                   {bestRevenueChannel && (
-                    <div className="bg-white rounded-xl border border-slate-200/80 px-4 py-3 shadow-sm">
+                    <Link href={`/dashboard/drill/channel?channel=${encodeURIComponent(String(bestRevenueChannel.channel))}&period=${encodeURIComponent(periodYm)}&return=${encodeURIComponent(`/funnel?period=${periodYm}`)}`} className="bg-white rounded-xl border border-slate-200/80 px-4 py-3 shadow-sm block hover:border-indigo-200 hover:shadow-md transition-all" onMouseEnter={() => prefetchChannelDrill(String(bestRevenueChannel.channel), periodYm)}>
                       <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Макс. выручка по каналу</p>
-                      <p className="text-sm font-semibold text-slate-800 truncate" title={bestRevenueChannel.channel}>{bestRevenueChannel.channel}</p>
+                      <p className="text-sm font-semibold text-slate-800 truncate">{bestRevenueChannel.channel}</p>
                       <p className="text-xs text-[#6366f1] font-medium">{fmtKzt(Number(bestRevenueChannel.revenue ?? 0))}</p>
-                    </div>
+                    </Link>
                   )}
                   {bestManager && (
-                    <div className="bg-white rounded-xl border border-slate-200/80 px-4 py-3 shadow-sm">
+                    <div className="bg-white rounded-xl border border-slate-200/80 px-4 py-3 shadow-sm hover:border-indigo-200 hover:shadow-md transition-all">
                       <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Топ менеджер</p>
-                      <p className="text-sm font-semibold text-slate-800 truncate" title={bestManager.manager}>{bestManager.manager}</p>
+                      {bestManager.manager_id != null && Number(bestManager.manager_id) > 0 ? (
+                        <Link href={`/dashboard/drill/manager/${bestManager.manager_id}?period=${encodeURIComponent(String(start).slice(0, 7))}&return=${encodeURIComponent(`/funnel?period=${String(start).slice(0, 7)}`)}`} className="text-sm font-semibold text-slate-800 truncate block hover:text-accent hover:underline" onMouseEnter={() => prefetchManagerDrill(String(bestManager.manager_id), String(start).slice(0, 7))}>{bestManager.manager}</Link>
+                      ) : (
+                        <p className="text-sm font-semibold text-slate-800 truncate">{bestManager.manager}</p>
+                      )}
                       <p className="text-xs text-[#6366f1] font-medium">{fmtKzt(Number(bestManager.revenue ?? 0))} · {bestManager.completed} сделок</p>
                     </div>
                   )}
                   {bestHouse && bestHouse.total && (bestHouse.completed ?? 0) > 0 && (
-                    <div className="bg-white rounded-xl border border-slate-200/80 px-4 py-3 shadow-sm">
+                    <div className="bg-white rounded-xl border border-slate-200/80 px-4 py-3 shadow-sm hover:border-indigo-200 hover:shadow-md transition-all">
                       <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Лучший объект</p>
-                      <p className="text-sm font-semibold text-slate-800 truncate" title={bestHouse.house}>{bestHouse.house}</p>
+                      {bestHouse.house_id != null && Number(bestHouse.house_id) > 0 ? (
+                        <Link href={`/dashboard/drill/house/${bestHouse.house_id}?period=${encodeURIComponent(String(start).slice(0, 7))}&return=${encodeURIComponent(`/funnel?period=${String(start).slice(0, 7)}`)}`} className="text-sm font-semibold text-slate-800 truncate block hover:text-accent hover:underline" onMouseEnter={() => prefetchHouseDrill(String(bestHouse.house_id), String(start).slice(0, 7))}>{bestHouse.house}</Link>
+                      ) : (
+                        <p className="text-sm font-semibold text-slate-800 truncate">{bestHouse.house}</p>
+                      )}
                       <p className="text-xs text-emerald-600 font-medium">{bestHouse.completed} сделок · {fmtPct((bestHouse.completed ?? 0) / bestHouse.total * 100)} конв.</p>
                     </div>
                   )}
@@ -1081,6 +1190,7 @@ function FunnelPageContent() {
                 channels={data?.channels ?? []}
                 funnelLeads={data?.funnelLeads ?? []}
                 summary={s}
+                periodYm={String(start).slice(0, 7)}
               />
             </div>
           ) : tab === "reserved" && !loading && s && data ? (
@@ -1202,28 +1312,20 @@ function FunnelPageContent() {
                       return (
                         <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
                           <td className="px-4 py-2.5 text-slate-700 font-medium truncate max-w-[140px]">
-                            <HoverTooltip content={<><strong>{row.house}</strong><br />Всего: {total}</>}>
+                            {row.house_id != null && Number(row.house_id) > 0 ? (
+                              <Link href={`/dashboard/drill/house/${row.house_id}?period=${encodeURIComponent(String(start).slice(0, 7))}&return=${encodeURIComponent(`/funnel?period=${String(start).slice(0, 7)}`)}`} className="text-accent hover:underline" onMouseEnter={() => prefetchHouseDrill(String(row.house_id), String(start).slice(0, 7))}>
+                                {row.house}
+                              </Link>
+                            ) : (
                               <span className="cursor-default">{row.house}</span>
-                            </HoverTooltip>
+                            )}
                           </td>
                           <td className="px-3 py-2.5 text-right font-bold text-slate-700">{total}</td>
                           <td className="px-4 py-2.5">
                             <div className="flex h-5 rounded-full overflow-hidden bg-slate-100 min-w-[100px]">
-                              {pctW > 0 && (
-                                <HoverTooltip content={<><strong>В работе</strong><br />{inWork}</>}>
-                                  <div className="h-full cursor-default bg-slate-300" style={{ width: `${pctW}%` }} />
-                                </HoverTooltip>
-                              )}
-                              {pctR > 0 && (
-                                <HoverTooltip content={<><strong>Брони</strong><br />{reserved}</>}>
-                                  <div className="h-full cursor-default bg-amber-400" style={{ width: `${pctR}%` }} />
-                                </HoverTooltip>
-                              )}
-                              {pctC > 0 && (
-                                <HoverTooltip content={<><strong>Сделки</strong><br />{completed}</>}>
-                                  <div className="h-full cursor-default bg-emerald-500" style={{ width: `${pctC}%` }} />
-                                </HoverTooltip>
-                              )}
+                              {pctW > 0 && <div className="h-full cursor-default bg-slate-300" style={{ width: `${pctW}%` }} />}
+                              {pctR > 0 && <div className="h-full cursor-default bg-amber-400" style={{ width: `${pctR}%` }} />}
+                              {pctC > 0 && <div className="h-full cursor-default bg-emerald-500" style={{ width: `${pctC}%` }} />}
                             </div>
                           </td>
                           <td className="px-3 py-2.5 text-right text-amber-600 font-semibold">{reserved}</td>
@@ -1279,9 +1381,7 @@ function FunnelPageContent() {
                           <td className="px-5 py-2.5">
                             <div className="flex items-center gap-2">
                               <div className="w-1.5 h-1.5 rounded-full bg-[#6366f1] shrink-0" />
-                              <HoverTooltip content={<><strong>{row.channel}</strong><br />Заявок: {row.leads} · Сделок: {row.deals} · Конв.: {fmtPct(Number(row.conv_pct ?? 0))}</>}>
-                                <span className="text-slate-700 font-medium truncate max-w-[200px] cursor-default">{row.channel}</span>
-                              </HoverTooltip>
+                              <Link href={`/dashboard/drill/channel?channel=${encodeURIComponent(String(row.channel))}&period=${encodeURIComponent(String(start).slice(0, 7))}&return=${encodeURIComponent(`/funnel?period=${String(start).slice(0, 7)}`)}`} className="text-slate-700 font-medium truncate max-w-[200px] hover:text-[#6366f1] hover:underline" onMouseEnter={() => prefetchChannelDrill(String(row.channel), String(start).slice(0, 7))}>{row.channel}</Link>
                             </div>
                           </td>
                           <td className="px-3 py-2.5 text-right">
@@ -1343,7 +1443,15 @@ function FunnelPageContent() {
                   <tbody>
                     {(data?.managers ?? []).map((row, i) => (
                       <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
-                        <td className="px-4 py-2.5 text-slate-700 font-medium truncate max-w-[130px]">{row.manager}</td>
+                        <td className="px-4 py-2.5 text-slate-700 font-medium truncate max-w-[130px]">
+                          {row.manager_id != null && Number(row.manager_id) > 0 ? (
+                            <Link href={`/dashboard/drill/manager/${row.manager_id}?period=${encodeURIComponent(String(start).slice(0, 7))}&return=${encodeURIComponent(`/funnel?period=${String(start).slice(0, 7)}`)}`} className="text-accent hover:underline" onMouseEnter={() => prefetchManagerDrill(String(row.manager_id), String(start).slice(0, 7))}>
+                              {row.manager}
+                            </Link>
+                          ) : (
+                            row.manager
+                          )}
+                        </td>
                         <td className="px-3 py-2.5 text-right font-bold text-slate-700">{row.deals_count}</td>
                         <td className="px-3 py-2.5 text-right text-emerald-600 font-semibold">{row.completed}</td>
                         <td className="px-4 py-2.5 text-right font-semibold text-[#6366f1]">{fmtKzt(Number(row.revenue))}</td>
@@ -1379,12 +1487,145 @@ function FunnelPageContent() {
           });
           return (
             <div className="mt-6">
-              <EventsCalendar byDay={byDay} start={data.period.start} end={data.period.end} />
+              <EventsCalendar byDay={byDay} start={data.period.start} end={data.period.end} onDayClick={handleDayClick} />
             </div>
           );
         })()}
 
       </main>
+
+      {/* Модальное окно: детализация по дню */}
+      {dayModalDate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={closeDayModal}>
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[85vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 bg-slate-50">
+              <h2 className="text-lg font-semibold text-slate-800">
+                {dayModalDate.split("-").reverse().join(".")} — заявки, сделки, брони
+              </h2>
+              <button
+                type="button"
+                onClick={closeDayModal}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                aria-label="Закрыть"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-6 min-h-[120px]">
+              {dayModalLoading ? (
+                <div className="flex items-center justify-center py-12 text-slate-500">
+                  <span className="animate-pulse">Загрузка…</span>
+                </div>
+              ) : dayModalError ? (
+                <div className="py-8 text-center">
+                  <p className="text-red-600 font-medium">{dayModalError}</p>
+                  <p className="text-sm text-slate-500 mt-1">Проверьте подключение и повторите попытку.</p>
+                </div>
+              ) : dayModalData ? (
+                <>
+                  {dayModalData.leads.length > 0 && (
+                    <section>
+                      <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#6366f1]" /> Заявки ({dayModalData.leads.length})
+                      </h3>
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200">
+                              <th className="text-left px-3 py-2 font-medium text-slate-600">Время</th>
+                              <th className="text-left px-3 py-2 font-medium text-slate-600">Контакт</th>
+                              <th className="text-left px-3 py-2 font-medium text-slate-600">Телефон</th>
+                              <th className="text-left px-3 py-2 font-medium text-slate-600">Канал</th>
+                              <th className="text-left px-3 py-2 font-medium text-slate-600">Статус</th>
+                              <th className="text-left px-3 py-2 font-medium text-slate-600">Менеджер</th>
+                              <th className="text-left px-3 py-2 font-medium text-slate-600">Сделка</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dayModalData.leads.map((row) => (
+                              <tr key={row.lead_id} className="border-b border-slate-100 hover:bg-slate-50/50">
+                                <td className="px-3 py-2 text-slate-700 whitespace-nowrap">{String(row.created_at).slice(11, 16)}</td>
+                                <td className="px-3 py-2 text-slate-800 max-w-[140px] truncate">{row.client_name}</td>
+                                <td className="px-3 py-2 text-slate-700 whitespace-nowrap">{row.client_phone}</td>
+                                <td className="px-3 py-2 text-slate-700">{row.channel}</td>
+                                <td className="px-3 py-2 text-slate-600">{row.status_name}</td>
+                                <td className="px-3 py-2 text-slate-600">{row.manager_name}</td>
+                                <td className="px-3 py-2 text-slate-700">{row.has_deal ? "Да" : "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  )}
+                  {dayModalData.deals.length > 0 && (
+                    <section>
+                      <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#059669]" /> Проведённые сделки ({dayModalData.deals.length})
+                      </h3>
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200">
+                              <th className="text-left px-3 py-2 font-medium text-slate-600">Клиент</th>
+                              <th className="text-left px-3 py-2 font-medium text-slate-600">Квартира</th>
+                              <th className="text-right px-3 py-2 font-medium text-slate-600">Сумма</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dayModalData.deals.map((row) => (
+                              <tr key={row.deal_id} className="border-b border-slate-100 hover:bg-slate-50/50">
+                                <td className="px-3 py-2 text-slate-800">{row.client_name}</td>
+                                <td className="px-3 py-2 text-slate-700">{row.flat_number}</td>
+                                <td className="px-3 py-2 text-right font-medium text-slate-800">{row.deal_sum.toLocaleString("ru-RU")} ₸</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  )}
+                  {dayModalData.reserved.length > 0 && (
+                    <section>
+                      <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#f97316]" /> Брони ({dayModalData.reserved.length})
+                      </h3>
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200">
+                              <th className="text-left px-3 py-2 font-medium text-slate-600">Клиент</th>
+                              <th className="text-left px-3 py-2 font-medium text-slate-600">Квартира</th>
+                              <th className="text-right px-3 py-2 font-medium text-slate-600">Сумма</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dayModalData.reserved.map((row) => (
+                              <tr key={row.deal_id} className="border-b border-slate-100 hover:bg-slate-50/50">
+                                <td className="px-3 py-2 text-slate-800">{row.client_name}</td>
+                                <td className="px-3 py-2 text-slate-700">{row.flat_number}</td>
+                                <td className="px-3 py-2 text-right font-medium text-slate-800">{row.deal_sum.toLocaleString("ru-RU")} ₸</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  )}
+                  {(dayModalData.leads.length === 0 && dayModalData.deals.length === 0 && dayModalData.reserved.length === 0) && (
+                    <p className="text-slate-500 text-sm py-6 text-center">За выбранный день нет заявок, сделок и броней.</p>
+                  )}
+                </>
+              ) : (
+                <p className="text-slate-500 text-sm py-6 text-center">Нет данных для отображения.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

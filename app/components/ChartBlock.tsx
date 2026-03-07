@@ -34,7 +34,7 @@ export default function ChartBlock({ spec }: { spec: ChartSpec }) {
   const exportMinWidth = manyCategories ? Math.max(960, data.length * 105) : 0;
 
   const commonProps = {
-    margin: { top: 8, right: 8, left: 0, bottom: 0 },
+    margin: { top: 12, right: 24, left: 52, bottom: 8 },
     data,
   };
 

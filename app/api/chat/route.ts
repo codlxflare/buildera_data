@@ -51,6 +51,7 @@ const CHARS_PER_TOKEN = 4;
 const CHAT_TEMPERATURE = 0.1;
 const SQL_MAX_TOKENS = 1500;
 const FORMAT_MAX_TOKENS = 2000;
+const FORMAT_MAX_TOKENS_LARGE = 12000; // при больших выборках — чтобы ответ не обрывался
 const CSV_EXPORT_THRESHOLD = 50;
 
 /**
@@ -265,7 +266,11 @@ export async function POST(req: NextRequest) {
     const controller = new AbortController();
     timeoutId = setTimeout(() => controller.abort(), 150_000);
     const sqlModelOpts = { model: getSqlModel(), temperature: CHAT_TEMPERATURE, max_completion_tokens: SQL_MAX_TOKENS };
-    const formatModelOpts = { model: getFormatModel(), temperature: CHAT_TEMPERATURE, max_completion_tokens: FORMAT_MAX_TOKENS };
+    const getFormatModelOpts = (rowCount: number) => ({
+      model: getFormatModel(),
+      temperature: CHAT_TEMPERATURE,
+      max_completion_tokens: rowCount >= CSV_EXPORT_THRESHOLD ? FORMAT_MAX_TOKENS_LARGE : FORMAT_MAX_TOKENS,
+    });
 
     const firstCallMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: "system", content: dbConfigured ? systemForSql : systemFallback },
@@ -433,7 +438,8 @@ export async function POST(req: NextRequest) {
         const useAnonymize = !noAnonymize;
         const { anonymizedRows, placeholderToReal } = useAnonymize ? anonymizeRows(result.rows) : { anonymizedRows: result.rows, placeholderToReal: new Map<string, string>() };
         const dataBlock = `[Результат запроса к БД (${result.rowCount} строк):]\n\`\`\`\n${formatRowsForAi(anonymizedRows)}\n\`\`\``;
-        const formatUserContent = `Вопрос пользователя: ${userContent}\n\n${dataBlock}\n\nСделай данные наглядными. Суммы указывай в KZT (тенге).${result.rowCount >= CSV_EXPORT_THRESHOLD ? " В начале ответа кратко отметь, что показано много строк и доступна выгрузка в CSV." : ""}`;
+        const isLargeTable = result.rowCount >= CSV_EXPORT_THRESHOLD;
+        const formatUserContent = `Вопрос пользователя: ${userContent}\n\n${dataBlock}\n\nСделай данные наглядными. Суммы указывай в KZT (тенге).${isLargeTable ? " ОБЯЗАТЕЛЬНО: не выводи полную таблицу в markdown (иначе ответ обрежется). Выведи краткое резюме, итоги по колонкам при необходимости и фразу что доступна выгрузка в CSV (кнопка скачивания у пользователя). Таблицу в ответе — только первые 10–15 строк как пример или не более 20 строк." : ""}`;
 
         log("FORMAT_INPUT", {
           dataBlockLength: dataBlock.length,
@@ -446,6 +452,7 @@ export async function POST(req: NextRequest) {
           const stream = new ReadableStream({
             async start(ctrl) {
               ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ t: "step", step: "format" })}\n\n`));
+              const formatModelOpts = getFormatModelOpts(result.rowCount);
               const formatStream = await openai.chat.completions.create(
                 {
                   ...formatModelOpts,
@@ -489,6 +496,7 @@ export async function POST(req: NextRequest) {
           });
         }
 
+        const formatModelOpts = getFormatModelOpts(result.rowCount);
         const formatCompletion = await openai.chat.completions.create(
           {
             ...formatModelOpts,

@@ -40,6 +40,9 @@ interface AiMessage {
   charts?: ChartSpec[];
   suggestions?: string[];
   clarify?: ClarifySpec;
+  exportId?: string;
+  rowCount?: number;
+  sql?: string;
 }
 
 interface DashboardAiPanelProps {
@@ -60,10 +63,53 @@ export default function DashboardAiPanel({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const [csvDownloadingId, setCsvDownloadingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedTableId, setCopiedTableId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const sentInitialRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  function extractMarkdownTable(content: string): string | null {
+    const match = content.match(/\|[^\n]+\|\n\|[-:\s|]+\|\n(\|[^\n]+\|\n?)+/);
+    return match ? match[0].trim() : null;
+  }
+  function copyContent(msgKey: string, text: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(msgKey);
+      setTimeout(() => setCopiedId(null), 2000);
+    });
+  }
+  function copyTable(msgKey: string, content: string) {
+    const table = extractMarkdownTable(content);
+    if (!table) return;
+    navigator.clipboard.writeText(table).then(() => {
+      setCopiedTableId(msgKey);
+      setTimeout(() => setCopiedTableId(null), 2000);
+    });
+  }
+  async function downloadCsv(exportId: string, rowCount: number) {
+    if (csvDownloadingId) return;
+    setCsvDownloadingId(exportId);
+    try {
+      const res = await fetch(`/api/chat/export?id=${encodeURIComponent(exportId)}`, { credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(typeof data?.error === "string" ? data.error : "Ошибка выгрузки");
+      }
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `macrodata-export-${exportId.slice(0, 8)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCsvDownloadingId(null);
+    }
+  }
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -131,6 +177,7 @@ export default function DashboardAiPanel({
             const payload = JSON.parse(line.slice(6)) as {
               t?: string; c?: string; reply?: string; error?: string; charts?: ChartSpec[];
               suggestions?: string[]; clarify?: ClarifySpec;
+              exportId?: string; rowCount?: number; sql?: string;
             };
             if (payload.t === "d" && typeof payload.c === "string") {
               setMessages((prev) => {
@@ -161,6 +208,9 @@ export default function DashboardAiPanel({
                     charts,
                     suggestions: Array.isArray(payload.suggestions) ? payload.suggestions : undefined,
                     clarify: payload.clarify ?? undefined,
+                    exportId: typeof payload.exportId === "string" ? payload.exportId : undefined,
+                    rowCount: typeof payload.rowCount === "number" ? payload.rowCount : undefined,
+                    sql: typeof payload.sql === "string" ? payload.sql : undefined,
                   };
                 }
                 return next;
@@ -325,20 +375,75 @@ export default function DashboardAiPanel({
                   <p className="whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
                 ) : (
                   <div className="space-y-2">
-                    {m.content
-                      ? <MessageContent content={m.content} />
-                      : loading && i === messages.length - 1
-                        ? (
-                          <div className="flex items-center gap-2 text-slate-400">
-                            <div className="flex gap-1">
-                              {[0, 1, 2].map((j) => (
-                                <span key={j} className="w-1.5 h-1.5 rounded-full bg-accent/40 animate-bounce" style={{ animationDelay: `${j * 0.15}s` }} />
-                              ))}
-                            </div>
-                            <span className="text-xs">Думаю…</span>
+                    {m.content ? (
+                      <div className="flex flex-col gap-1.5">
+                        <MessageContent content={m.content} />
+                        {m.content && (
+                          <div className="flex items-center gap-0.5 flex-wrap">
+                            {m.exportId != null && m.rowCount != null && (
+                              <button
+                                type="button"
+                                onClick={() => downloadCsv(m.exportId!, m.rowCount!)}
+                                disabled={csvDownloadingId === m.exportId}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-40"
+                                title={`Скачать CSV (${m.rowCount} строк)`}
+                              >
+                                {csvDownloadingId === m.exportId ? (
+                                  <span className="text-xs text-accent">…</span>
+                                ) : (
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                  </svg>
+                                )}
+                              </button>
+                            )}
+                            {extractMarkdownTable(m.content) && (
+                              <button
+                                type="button"
+                                onClick={() => copyTable(`msg-${i}`, m.content)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                                title="Копировать таблицу"
+                              >
+                                {copiedTableId === `msg-${i}` ? (
+                                  <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                  </svg>
+                                )}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => copyContent(`msg-${i}`, m.content)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                              title="Копировать"
+                            >
+                              {copiedId === `msg-${i}` ? (
+                                <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              ) : (
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                              )}
+                            </button>
                           </div>
-                        )
-                        : null}
+                        )}
+                      </div>
+                    ) : loading && i === messages.length - 1 ? (
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <div className="flex gap-1">
+                          {[0, 1, 2].map((j) => (
+                            <span key={j} className="w-1.5 h-1.5 rounded-full bg-accent/40 animate-bounce" style={{ animationDelay: `${j * 0.15}s` }} />
+                          ))}
+                        </div>
+                        <span className="text-xs">Думаю…</span>
+                      </div>
+                    ) : null}
 
                     {m.charts && m.charts.length > 0 && (
                       <div className="space-y-2 mt-2">

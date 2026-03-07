@@ -7,9 +7,15 @@ import {
   PieChart, Pie, Cell, XAxis, YAxis, Tooltip, Legend,
   ResponsiveContainer, CartesianGrid, ReferenceLine,
 } from "recharts";
+import { ReactGridLayout as GridLayout, WidthProvider, type Layout } from "react-grid-layout/legacy";
+import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
+
+const GridLayoutWithWidth = WidthProvider(GridLayout);
 import type { WidgetKey } from "@/app/lib/dashboardQueries";
 import type { ChartSpec } from "@/app/lib/chartSpec";
 import { randomUUID } from "@/app/lib/uuid";
+import { getDashboardData, setDashboardData, prefetchDetailData, prefetchDetailMetric } from "@/app/lib/dashboardCache";
 import ChartBlock from "@/app/components/ChartBlock";
 import HoverTooltip from "@/app/components/HoverTooltip";
 import TopNav from "@/app/components/TopNav";
@@ -37,6 +43,10 @@ const TOOLTIP_STYLE = {
 };
 const AXIS_TICK = { fill: "#475569", fontSize: 11 };
 const GRID_STROKE = "#e2e8f0";
+/** Отступы графика, чтобы подписи осей (Y — числа, X — подписи) не обрезались. */
+const CHART_MARGIN = { top: 12, right: 24, left: 52, bottom: 8 };
+const CHART_MARGIN_X_ROTATED = { top: 12, right: 24, left: 52, bottom: 72 };
+const CHART_MARGIN_MANAGERS = { top: 12, right: 24, left: 52, bottom: 68 };
 
 /* ─── Types ──────────────────────────────────────────────────── */
 interface CustomWidget {
@@ -49,10 +59,14 @@ interface CustomWidget {
 
 type AnyWidgetId = WidgetKey | string; // custom = `custom:${uuid}`
 
+/** Один элемент сетки для react-grid-layout (перетаскивание и изменение размеров). */
+export type DashboardLayoutItem = { i: string; x: number; y: number; w: number; h: number };
+
 interface StoredDashboard {
   id: string;
   name: string;
   widgetIds: AnyWidgetId[];
+  layout?: DashboardLayoutItem[];
   createdAt: number;
 }
 
@@ -75,6 +89,7 @@ const WIDGET_META: Record<WidgetKey, { label: string; desc: string; icon: string
   deals_by_status: { label: "Сделки по статусам", desc: "Распределение сделок по статусам", icon: "M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z", span: "third" },
   payment_incoming: { label: "Платежи в периоде", desc: "Просрочено / в срок", icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z", span: "third" },
   leads_funnel: { label: "Воронка продаж", desc: "За период: заявки (все), встречи, завершённые сделки", icon: "M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4", span: "third" },
+  active_properties_list: { label: "В продаже", desc: "Активные лоты в продаже", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6", span: "full" },
 };
 
 const ALL_CHART_WIDGETS: WidgetKey[] = [
@@ -131,6 +146,79 @@ function saveCustomWidgets(widgets: Record<string, CustomWidget>) {
   try { localStorage.setItem(STORAGE_CUSTOM_KEY, JSON.stringify(widgets)); } catch {}
 }
 
+function isWideChartSpec(spec?: ChartSpec | null): boolean {
+  if (!spec) return false;
+  return spec.type === "bar" && Array.isArray(spec.data) && spec.data.length > 6;
+}
+
+/* ─── Layout (drag & resize) ───────────────────────────────────── */
+const GRID_COLS = 12;
+const ROW_HEIGHT = 120;
+const DEFAULT_H = 3;
+
+function getSpanW(span: "full" | "half" | "third"): number {
+  return span === "full" ? 12 : span === "half" ? 6 : 4;
+}
+
+/** Строит дефолтный layout по списку виджетов (без summary). */
+function getDefaultLayout(
+  widgetIds: AnyWidgetId[],
+  meta: typeof WIDGET_META,
+  customWidgets: Record<string, CustomWidget>
+): DashboardLayoutItem[] {
+  const ids = widgetIds.filter((w) => w !== "summary");
+  const out: DashboardLayoutItem[] = [];
+  let x = 0;
+  let y = 0;
+  for (const id of ids) {
+    let w: number;
+    if (String(id).startsWith("custom:")) {
+      const cw = customWidgets[String(id).slice(7)];
+      w = cw && isWideChartSpec(cw.chartSpec) ? 12 : 4;
+    } else {
+      w = getSpanW(meta[id as WidgetKey]?.span ?? "third");
+    }
+    if (x + w > GRID_COLS) {
+      x = 0;
+      y += DEFAULT_H;
+    }
+    out.push({ i: id, x, y, w, h: DEFAULT_H });
+    x += w;
+    if (x >= GRID_COLS) {
+      x = 0;
+      y += DEFAULT_H;
+    }
+  }
+  return out;
+}
+
+/** Объединяет сохранённый layout с текущим списком виджетов: сохраняет позиции для существующих, добавляет дефолт для новых. */
+function mergeLayout(
+  stored: DashboardLayoutItem[] | undefined,
+  widgetIds: AnyWidgetId[],
+  meta: typeof WIDGET_META,
+  customWidgets: Record<string, CustomWidget>
+): Layout {
+  const ids = widgetIds.filter((w) => w !== "summary");
+  if (!stored?.length) return getDefaultLayout(widgetIds, meta, customWidgets) as Layout;
+  const byId = new Map(stored.map((item) => [item.i, item]));
+  let newItemY = Math.max(...stored.map((item) => item.y + item.h), 0);
+  return ids.map((id) => {
+    const existing = byId.get(id);
+    if (existing) return { ...existing, i: id };
+    let w: number;
+    if (String(id).startsWith("custom:")) {
+      const cw = customWidgets[String(id).slice(7)];
+      w = cw && isWideChartSpec(cw.chartSpec) ? 12 : 4;
+    } else {
+      w = getSpanW(meta[id as WidgetKey]?.span ?? "third");
+    }
+    const item: DashboardLayoutItem = { i: id, x: 0, y: newItemY, w, h: DEFAULT_H };
+    newItemY += DEFAULT_H;
+    return item;
+  });
+}
+
 /* ─── Utils ──────────────────────────────────────────────────── */
 function getDefaultPeriod(): string {
   if (typeof window !== "undefined") {
@@ -141,11 +229,6 @@ function getDefaultPeriod(): string {
   // Default to previous month — current month usually has too little data
   const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function isWideChartSpec(spec?: ChartSpec | null): boolean {
-  if (!spec) return false;
-  return spec.type === "bar" && Array.isArray(spec.data) && spec.data.length > 6;
 }
 
 function formatMoney(v: number): string {
@@ -211,32 +294,39 @@ interface KpiCardProps {
   bgFrom: string;
   bgTo: string;
   borderColor: string;
+  /** Ссылка на страницу детализации (провал в детали). */
+  drillHref?: string;
 }
 
-function KpiCard({ label, value, subValue, icon, color, bgFrom, bgTo, borderColor }: KpiCardProps) {
-  return (
-    <div
-      className="relative rounded-2xl border overflow-hidden p-4 flex flex-col gap-2 min-h-[88px] group transition-all duration-200 hover:scale-[1.015] cursor-default"
-      style={{
-        borderColor,
-        background: `linear-gradient(135deg, ${bgFrom}, ${bgTo})`,
-        boxShadow: `0 1px 4px ${borderColor}33, 0 4px 16px -4px ${borderColor}44`,
-      }}
-    >
+function KpiCard({ label, value, subValue, icon, color, bgFrom, bgTo, borderColor, drillHref }: KpiCardProps) {
+  const cardClass = "relative rounded-2xl border overflow-hidden p-4 flex flex-col gap-2 min-h-[88px] group transition-all duration-200 hover:scale-[1.02] " + (drillHref ? "cursor-pointer" : "cursor-default");
+  const style = {
+    borderColor,
+    background: `linear-gradient(135deg, ${bgFrom}, ${bgTo})`,
+    boxShadow: `0 1px 4px ${borderColor}33, 0 4px 16px -4px ${borderColor}44`,
+  };
+  const content = (
+    <>
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wider" style={{ color }}>{label}</p>
+        <p className="text-xs font-semibold uppercase tracking-wider min-w-0 flex-1" style={{ color }}>{label}</p>
         <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: color + "20" }}>
           <svg className="w-4 h-4" fill="none" stroke={color} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon} />
           </svg>
         </div>
       </div>
-      <HoverTooltip content={<><strong>{label}</strong><br />{value}</>}>
-        <p className="text-2xl font-bold text-slate-900 truncate leading-tight cursor-default">{value}</p>
-      </HoverTooltip>
+      <p className="text-2xl font-bold text-slate-900 truncate leading-tight">{value}</p>
       {subValue && <p className="text-xs font-medium" style={{ color }}>{subValue}</p>}
-    </div>
+    </>
   );
+  if (drillHref) {
+    return (
+      <Link href={drillHref} className={cardClass} style={style}>
+        {content}
+      </Link>
+    );
+  }
+  return <div className={cardClass} style={style}>{content}</div>;
 }
 
 /* ─── Widget wrapper ─────────────────────────────────────────── */
@@ -251,11 +341,10 @@ function WidgetCard({
   span?: "half" | "full" | "third";
 }) {
   return (
-    <div className={`ui-card ui-card-elevate overflow-hidden animate-fade-in flex flex-col
-      ${span === "full" ? "lg:col-span-3" : span === "half" ? "lg:col-span-2" : "lg:col-span-1"}`}>
-      <div className="flex-shrink-0 px-4 py-3 border-b border-[#f0f4f8] flex items-center justify-between gap-2 bg-[#fafbfc]">
+    <div className="ui-card ui-card-elevate overflow-hidden animate-fade-in flex flex-col h-full">
+      <div className="widget-drag-handle flex-shrink-0 px-4 py-3 border-b border-[#f0f4f8] flex items-center justify-between gap-2 bg-[#fafbfc] cursor-grab active:cursor-grabbing">
         <HoverTooltip content={<strong>{title}</strong>}>
-          <span className="text-sm font-semibold text-slate-700 truncate cursor-default">{title}</span>
+          <span className="text-sm font-semibold text-slate-700 line-clamp-2 cursor-default break-words min-w-0">{title}</span>
         </HoverTooltip>
         <button type="button" onClick={onRemove}
           className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-400 hover:bg-red-50 transition-all"
@@ -277,7 +366,7 @@ function ChartDealsMonth({ rows }: { rows: Record<string, unknown>[] }) {
   const d = rows.map((r) => ({ month: String(r.month ?? ""), cnt: Number(r.cnt ?? 0) }));
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <AreaChart data={d} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+      <AreaChart data={d} margin={CHART_MARGIN}>
         <defs>
           <linearGradient id="gradDeals" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3} />
@@ -298,7 +387,7 @@ function ChartDealsAmount({ rows }: { rows: Record<string, unknown>[] }) {
   const d = rows.map((r) => ({ month: String(r.month ?? ""), amount: Number(r.amount ?? 0), cnt: Number(r.cnt ?? 0) }));
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <AreaChart data={d} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+      <AreaChart data={d} margin={CHART_MARGIN}>
         <defs>
           <linearGradient id="gradAmt" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
@@ -319,7 +408,7 @@ function ChartAvgCheckByMonth({ rows }: { rows: Record<string, unknown>[] }) {
   const d = rows.map((r) => ({ month: String(r.month ?? ""), avg: Number(r.avg_amount ?? 0), cnt: Number(r.cnt ?? 0) }));
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <LineChart data={d} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+      <LineChart data={d} margin={CHART_MARGIN}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
         <XAxis dataKey="month" tick={AXIS_TICK} />
         <YAxis tick={AXIS_TICK} tickFormatter={(v) => formatMoney(v)} />
@@ -338,7 +427,7 @@ function ChartManagers({ rows }: { rows: Record<string, unknown>[] }) {
   }));
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={d} margin={{ top: 8, right: 16, left: 0, bottom: 60 }}>
+      <BarChart data={d} margin={CHART_MARGIN_MANAGERS}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} vertical={false} />
         <XAxis dataKey="manager" tick={{ ...AXIS_TICK, fontSize: 10 }} angle={-25} textAnchor="end" height={65} interval={0} />
         <YAxis yAxisId="left" tick={AXIS_TICK} allowDecimals={false} />
@@ -360,7 +449,7 @@ function ChartPlanVsFact({ rows }: { rows: Record<string, unknown>[] }) {
   }));
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={d} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+      <BarChart data={d} margin={CHART_MARGIN}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} vertical={false} />
         <XAxis dataKey="month" tick={AXIS_TICK} />
         <YAxis tick={AXIS_TICK} tickFormatter={(v) => formatMoney(v)} />
@@ -380,7 +469,7 @@ function ChartLeadsByChannel({ rows }: { rows: Record<string, unknown>[] }) {
   const d = rows.map((r) => ({ name: String(r.channel ?? "").slice(0, 22), cnt: Number(r.cnt ?? 0) }));
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={d} layout="vertical" margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+      <BarChart data={d} layout="vertical" margin={{ ...CHART_MARGIN, top: 8, right: 20, left: 52 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} horizontal={false} />
         <XAxis type="number" tick={AXIS_TICK} allowDecimals={false} />
         <YAxis type="category" dataKey="name" width={130} tick={{ ...AXIS_TICK, fontSize: 10 }} />
@@ -393,16 +482,33 @@ function ChartLeadsByChannel({ rows }: { rows: Record<string, unknown>[] }) {
   );
 }
 
-function ChartDebtByHouse({ rows }: { rows: Record<string, unknown>[] }) {
-  const d = rows.map((r) => ({ name: String(r.house_name ?? "").slice(0, 18), total: Number(r.total ?? 0) }));
+function ChartDebtByHouse({ rows, period }: { rows: Record<string, unknown>[]; period?: string }) {
+  const d = rows.map((r) => ({
+    name: String(r.house_name ?? "").slice(0, 18),
+    total: Number(r.total ?? 0),
+    house_id: r.house_id != null && Number(r.house_id) > 0 ? Number(r.house_id) : null,
+  }));
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={d} margin={{ top: 4, right: 8, left: 0, bottom: 70 }}>
+      <BarChart data={d} margin={CHART_MARGIN_X_ROTATED}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} vertical={false} />
         <XAxis dataKey="name" tick={{ ...AXIS_TICK, fontSize: 10 }} angle={-40} textAnchor="end" height={72} interval={0} />
         <YAxis tick={AXIS_TICK} tickFormatter={(v) => formatMoney(v)} />
         <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => [v.toLocaleString("ru-RU"), "Сумма, ₸"]} />
-        <Bar dataKey="total" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={32} />
+        <Bar
+          dataKey="total"
+          fill="#10b981"
+          radius={[4, 4, 0, 0]}
+          maxBarSize={32}
+          cursor={period ? "pointer" : undefined}
+          onClick={(ev: unknown) => {
+            const pl = (ev as { payload?: { house_id?: number | null } })?.payload ?? ev as { house_id?: number | null };
+            if (period && pl?.house_id) {
+              const returnTo = `/dashboard?period=${period}`;
+              window.location.href = `/dashboard/drill/house/${pl.house_id}?period=${encodeURIComponent(period)}&return=${encodeURIComponent(returnTo)}`;
+            }
+          }}
+        />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -416,7 +522,7 @@ function ChartConversion({ rows }: { rows: Record<string, unknown>[] }) {
   }));
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={d} margin={{ top: 4, right: 8, left: 0, bottom: 60 }}>
+      <BarChart data={d} margin={{ ...CHART_MARGIN_X_ROTATED, bottom: 64 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} vertical={false} />
         <XAxis dataKey="name" tick={{ ...AXIS_TICK, fontSize: 10 }} angle={-30} textAnchor="end" height={62} interval={0} />
         <YAxis tick={AXIS_TICK} tickFormatter={(v) => `${v}%`} domain={[0, 100]} />
@@ -470,7 +576,7 @@ function ChartLeadsFunnel({ rows }: { rows: Record<string, unknown>[] }) {
   const funnelColors = ["#0ea5e9", "#8b5cf6", "#10b981"];
   return (
     <ResponsiveContainer width="100%" height={220}>
-      <BarChart data={d} layout="vertical" margin={{ top: 4, right: 40, left: 10, bottom: 4 }}>
+      <BarChart data={d} layout="vertical" margin={{ top: 8, right: 44, left: 52, bottom: 8 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} horizontal={false} />
         <XAxis type="number" tick={AXIS_TICK} allowDecimals={false} />
         <YAxis type="category" dataKey="stage" width={65} tick={{ ...AXIS_TICK, fontSize: 11 }} />
@@ -784,6 +890,12 @@ export default function DashboardPage() {
   // Stable string key for useCallback dep — prevents infinite loops
   const stdWidgetsKey = stdWidgets.join(",");
 
+  /** Текущий layout для сетки (перетаскивание/ресайз): объединяет сохранённый с актуальным списком виджетов. */
+  const gridLayout = useMemo(
+    () => mergeLayout(activeDashboard?.layout, widgets, WIDGET_META, customWidgets),
+    [activeDashboard?.layout, widgets, customWidgets]
+  );
+
   useEffect(() => {
     fetch("/api/auth/session", FETCH_OPTS)
       .then((r) => { setAuthenticated(r.ok); setAuthChecked(true); })
@@ -811,12 +923,18 @@ export default function DashboardPage() {
       setLastUpdatedAt(Date.now());
       return;
     }
-    // Cancel any in-flight request before starting a new one
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
 
-    setLoading(true);
+    const fromCache = !bust && getDashboardData(period, stdWidgetsKey);
+    if (fromCache) {
+      setData(fromCache);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
     try {
       const url = `/api/dashboard/data?period=${encodeURIComponent(period)}&widgets=${stdWidgetsKey}${bust ? `&_t=${Date.now()}` : ""}`;
       const res = await fetch(url, { ...FETCH_OPTS, signal: ac.signal });
@@ -825,11 +943,13 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error("Ошибка загрузки");
       const json = await res.json() as Record<string, Record<string, unknown>[]>;
       if (ac.signal.aborted) return;
+      setDashboardData(period, stdWidgetsKey, json);
       setData(json);
       setLastUpdatedAt(Date.now());
+      setTimeout(() => prefetchDetailData(period), 100);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      setData({});
+      if (!fromCache) setData({});
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
@@ -875,6 +995,18 @@ export default function DashboardPage() {
     }));
   }
 
+  function setLayoutForActive(updater: (prev: DashboardLayoutItem[]) => DashboardLayoutItem[]) {
+    if (!activeDashboard) return;
+    setState((s) => ({
+      ...s,
+      dashboards: s.dashboards.map((d) =>
+        d.id === activeDashboard.id
+          ? { ...d, layout: updater(d.layout ?? []) }
+          : d
+      ),
+    }));
+  }
+
   function addStdWidget(key: WidgetKey) {
     if (widgets.includes(key)) return;
     setWidgetsForActive((prev) => [...prev, key]);
@@ -888,6 +1020,7 @@ export default function DashboardPage() {
 
   function removeWidget(widgetId: AnyWidgetId) {
     setWidgetsForActive((prev) => prev.filter((w) => w !== widgetId));
+    setLayoutForActive((prev) => prev.filter((l) => l.i !== widgetId));
   }
 
   function createDashboard() {
@@ -1004,6 +1137,7 @@ export default function DashboardPage() {
     const activeProps = Number(sr?.active_properties ?? 0);
     const conversion = totalLeads > 0 ? Math.round((completedDeals / totalLeads) * 1000) / 10 : 0;
 
+    const baseDetail = `/dashboard/detail?period=${encodeURIComponent(period)}`;
     return [
       {
         label: "Сделок за период",
@@ -1014,6 +1148,7 @@ export default function DashboardPage() {
         bgFrom: "rgba(14,165,233,0.12)",
         bgTo: "rgba(14,165,233,0.04)",
         borderColor: "rgba(14,165,233,0.3)",
+        drillHref: `${baseDetail}&metric=deals`,
       },
       {
         label: "Выручка",
@@ -1024,6 +1159,7 @@ export default function DashboardPage() {
         bgFrom: "rgba(16,185,129,0.12)",
         bgTo: "rgba(16,185,129,0.04)",
         borderColor: "rgba(16,185,129,0.3)",
+        drillHref: `${baseDetail}&metric=revenue`,
       },
       {
         label: "Новых заявок",
@@ -1034,6 +1170,7 @@ export default function DashboardPage() {
         bgFrom: "rgba(139,92,246,0.12)",
         bgTo: "rgba(139,92,246,0.04)",
         borderColor: "rgba(139,92,246,0.3)",
+        drillHref: `${baseDetail}&metric=leads`,
       },
       {
         label: "Конверсия",
@@ -1044,6 +1181,7 @@ export default function DashboardPage() {
         bgFrom: conversion >= 20 ? "rgba(16,185,129,0.12)" : conversion >= 10 ? "rgba(245,158,11,0.12)" : "rgba(239,68,68,0.12)",
         bgTo: "rgba(0,0,0,0.04)",
         borderColor: conversion >= 20 ? "rgba(16,185,129,0.3)" : conversion >= 10 ? "rgba(245,158,11,0.3)" : "rgba(239,68,68,0.3)",
+        drillHref: `${baseDetail}&metric=conversion`,
       },
       {
         label: "К оплате",
@@ -1054,6 +1192,7 @@ export default function DashboardPage() {
         bgFrom: overdueDebt > 0 ? "rgba(249,115,22,0.12)" : "rgba(14,165,233,0.12)",
         bgTo: "rgba(0,0,0,0.04)",
         borderColor: overdueDebt > 0 ? "rgba(249,115,22,0.3)" : "rgba(14,165,233,0.3)",
+        drillHref: `${baseDetail}&metric=debt`,
       },
       {
         label: "В продаже",
@@ -1064,9 +1203,10 @@ export default function DashboardPage() {
         bgFrom: "rgba(100,116,139,0.12)",
         bgTo: "rgba(100,116,139,0.04)",
         borderColor: "rgba(100,116,139,0.3)",
+        drillHref: `${baseDetail}&metric=properties`,
       },
     ];
-  }, [summaryRow, loading, periodLabel]);
+  }, [summaryRow, loading, periodLabel, period]);
 
   if (!authChecked) {
     return (
@@ -1151,6 +1291,25 @@ export default function DashboardPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
               </svg>
               <span className="font-medium">Воронка продаж</span>
+            </Link>
+          </div>
+          <p className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">Отчёты</p>
+          <div className="px-2 space-y-0.5 mb-2">
+            <Link href={`/dashboard/detail?metric=deals&period=${encodeURIComponent(period)}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors" onMouseEnter={() => prefetchDetailMetric("deals", period)}>
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" aria-hidden />
+              Сделки
+            </Link>
+            <Link href={`/dashboard/detail?metric=revenue&period=${encodeURIComponent(period)}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors" onMouseEnter={() => prefetchDetailMetric("revenue", period)}>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden />
+              Выручка
+            </Link>
+            <Link href={`/dashboard/detail?metric=leads&period=${encodeURIComponent(period)}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors" onMouseEnter={() => prefetchDetailMetric("leads", period)}>
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" aria-hidden />
+              Заявки
+            </Link>
+            <Link href={`/dashboard/detail?metric=debt&period=${encodeURIComponent(period)}`} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors" onMouseEnter={() => prefetchDetailMetric("debt", period)}>
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" aria-hidden />
+              К оплате
             </Link>
           </div>
           <p className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">Дашборды</p>
@@ -1375,72 +1534,86 @@ export default function DashboardPage() {
                   </section>
                 )}
 
-                {/* Charts Grid — 3 fractional columns on large screens */}
-                <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
-                  {widgets.filter((w) => w !== "summary").map((widgetId) => {
-                    // Custom AI widget
-                    if (String(widgetId).startsWith("custom:")) {
-                      const id = String(widgetId).slice(7);
-                      const cw = customWidgets[id];
-                      if (!cw) return null;
-                      const wideCustom = isWideChartSpec(cw.chartSpec);
-                      return (
-                        <div key={widgetId}
-                          className={`ui-card ui-card-elevate border-accent/25 overflow-hidden animate-fade-in flex flex-col ${wideCustom ? "lg:col-span-3" : "lg:col-span-1"}`}>
-                          <div className="flex-shrink-0 px-4 py-3 border-b border-[#f0f4f8] flex items-center justify-between gap-2 bg-[#fafbfc]">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="w-2 h-2 rounded-full bg-accent shrink-0" />
-                              <span className="text-sm font-semibold text-slate-700 truncate">{cw.title}</span>
-                              <span className="ui-badge ui-badge-blue shrink-0">ИИ</span>
+                {/* Charts Grid — перетаскивание и изменение размеров */}
+                <section className="dashboard-grid-section" style={{ minHeight: 400 }}>
+                  <GridLayoutWithWidth
+                    layout={gridLayout}
+                    onLayoutChange={(layout) => setLayoutForActive(() => layout as DashboardLayoutItem[])}
+                    className="layout"
+                    cols={GRID_COLS}
+                    rowHeight={ROW_HEIGHT}
+                    draggableHandle=".widget-drag-handle"
+                    isResizable={true}
+                    compactType="vertical"
+                    margin={[16, 16]}
+                    containerPadding={[0, 0]}
+                    useCSSTransforms={true}
+                  >
+                    {widgets.filter((w) => w !== "summary").map((widgetId) => {
+                      // Custom AI widget
+                      if (String(widgetId).startsWith("custom:")) {
+                        const id = String(widgetId).slice(7);
+                        const cw = customWidgets[id];
+                        if (!cw) return null;
+                        return (
+                          <div key={widgetId} className="widget-cell">
+                            <div className="ui-card ui-card-elevate border-accent/25 overflow-hidden animate-fade-in flex flex-col h-full">
+                              <div className="widget-drag-handle flex-shrink-0 px-4 py-3 border-b border-[#f0f4f8] flex items-center justify-between gap-2 bg-[#fafbfc] cursor-grab active:cursor-grabbing">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-2 h-2 rounded-full bg-accent shrink-0" />
+                                  <span className="text-sm font-semibold text-slate-700 line-clamp-2 break-words min-w-0">{cw.title}</span>
+                                  <span className="ui-badge ui-badge-blue shrink-0">ИИ</span>
+                                </div>
+                                <button type="button" onClick={() => removeWidget(widgetId)}
+                                  className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-400 hover:bg-red-50 transition-all"
+                                  title="Удалить виджет">
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                              <div className="flex-1 p-3 min-h-0">
+                                <ChartBlock spec={cw.chartSpec} />
+                              </div>
                             </div>
-                            <button type="button" onClick={() => removeWidget(widgetId)}
-                              className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-400 hover:bg-red-50 transition-all"
-                              title="Удалить виджет">
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
                           </div>
-                          <div className="flex-1 p-3">
-                            <ChartBlock spec={cw.chartSpec} />
-                          </div>
+                        );
+                      }
+
+                      // Standard widget
+                      const key = widgetId as WidgetKey;
+                      const meta = WIDGET_META[key];
+                      if (!meta) return null;
+                      const rows = data[key] || [];
+                      const isEmpty = !loading && rows.length === 0;
+
+                      return (
+                        <div key={key} className="widget-cell">
+                          <WidgetCard
+                            title={meta.label}
+                            onRemove={() => removeWidget(key)}
+                            loading={loading}
+                            isEmpty={isEmpty}
+                            span={meta.span}
+                          >
+                            <>
+                              {key === "deals_by_month" && <ChartDealsMonth rows={rows} />}
+                              {key === "deals_amount_by_month" && <ChartDealsAmount rows={rows} />}
+                              {key === "avg_check_by_month" && <ChartAvgCheckByMonth rows={rows} />}
+                              {key === "managers_performance" && <ChartManagers rows={rows} />}
+                              {key === "plan_vs_fact" && <ChartPlanVsFact rows={rows} />}
+                              {key === "leads_by_channel" && <ChartLeadsByChannel rows={rows} />}
+                              {key === "debt_by_house" && <ChartDebtByHouse rows={rows} period={period} />}
+                              {key === "conversion_by_channel" && <ChartConversion rows={rows} />}
+                              {key === "deals_by_status" && <ChartDealsByStatus rows={rows} />}
+                              {key === "payment_incoming" && <ChartPaymentIncoming rows={rows} />}
+                              {key === "leads_funnel" && <ChartLeadsFunnel rows={rows} />}
+                            </>
+                          </WidgetCard>
                         </div>
                       );
-                    }
-
-                    // Standard widget
-                    const key = widgetId as WidgetKey;
-                    const meta = WIDGET_META[key];
-                    if (!meta) return null;
-                    const rows = data[key] || [];
-                    const isEmpty = !loading && rows.length === 0;
-                    const spanClass = meta.span === "full" ? "lg:col-span-3" : meta.span === "half" ? "lg:col-span-2" : "lg:col-span-1";
-
-                    return (
-                      <WidgetCard
-                        key={key}
-                        title={meta.label}
-                        onRemove={() => removeWidget(key)}
-                        loading={loading}
-                        isEmpty={isEmpty}
-                        span={meta.span}
-                      >
-                        <div className={spanClass === "lg:col-span-3" ? "" : ""}>
-                          {key === "deals_by_month" && <ChartDealsMonth rows={rows} />}
-                          {key === "deals_amount_by_month" && <ChartDealsAmount rows={rows} />}
-                          {key === "avg_check_by_month" && <ChartAvgCheckByMonth rows={rows} />}
-                          {key === "managers_performance" && <ChartManagers rows={rows} />}
-                          {key === "plan_vs_fact" && <ChartPlanVsFact rows={rows} />}
-                          {key === "leads_by_channel" && <ChartLeadsByChannel rows={rows} />}
-                          {key === "debt_by_house" && <ChartDebtByHouse rows={rows} />}
-                          {key === "conversion_by_channel" && <ChartConversion rows={rows} />}
-                          {key === "deals_by_status" && <ChartDealsByStatus rows={rows} />}
-                          {key === "payment_incoming" && <ChartPaymentIncoming rows={rows} />}
-                          {key === "leads_funnel" && <ChartLeadsFunnel rows={rows} />}
-                        </div>
-                      </WidgetCard>
-                    );
-                  })}
+                    })}
+                  </GridLayoutWithWidth>
                 </section>
               </>
             )}

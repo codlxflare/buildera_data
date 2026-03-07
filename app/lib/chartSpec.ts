@@ -83,17 +83,32 @@ function parseOneChart(raw: string): ChartSpec | null {
         });
       if (!["bar", "line", "pie", "area"].includes(t) || safeData.length === 0) return null;
 
+      const rawYKey = (parsed as Record<string, unknown>).yKey ?? (parsed as Record<string, unknown>).yField ?? (parsed as Record<string, unknown>).y;
+      const yKeyVal = typeof rawYKey === "string" ? rawYKey : "y";
+
       let series: ChartSeries[] | undefined;
       const rawSeries = (parsed as Record<string, unknown>).series;
       if (Array.isArray(rawSeries) && rawSeries.length > 0) {
         series = rawSeries
-          .filter((s): s is Record<string, unknown> => typeof s === "object" && s !== null && "name" in s && "dataKey" in s)
+          .filter((s): s is Record<string, unknown> => typeof s === "object" && s !== null && "name" in s)
           .slice(0, 5)
-          .map((s, i) => ({
-            name: String(s.name),
-            dataKey: String(s.dataKey),
-            color: typeof s.color === "string" ? s.color : CHART_COLORS[i % CHART_COLORS.length],
-          }));
+          .map((s, i) => {
+            const dataKey =
+              typeof (s as Record<string, unknown>).dataKey === "string"
+                ? (s as Record<string, unknown>).dataKey as string
+                : typeof (s as Record<string, unknown>).y === "string"
+                  ? (s as Record<string, unknown>).y as string
+                  : rawSeries.length === 1
+                    ? yKeyVal
+                    : "";
+            return {
+              name: String((s as Record<string, unknown>).name),
+              dataKey,
+              color: typeof (s as Record<string, unknown>).color === "string" ? (s as Record<string, unknown>).color as string : CHART_COLORS[i % CHART_COLORS.length],
+            };
+          })
+          .filter((s) => s.dataKey.length > 0);
+        if (series.length === 0) series = undefined;
       }
 
       const stacked =
@@ -105,12 +120,15 @@ function parseOneChart(raw: string): ChartSpec | null {
           ? ((parsed as Record<string, unknown>).description as string).slice(0, 200)
           : undefined;
 
+      const rawXKey = (parsed as Record<string, unknown>).xKey ?? (parsed as Record<string, unknown>).x ?? (parsed as Record<string, unknown>).xField;
+      const xKeyVal = typeof rawXKey === "string" ? rawXKey : "x";
+
       return {
         type: t as ChartSpec["type"],
         title: typeof (parsed as Record<string, unknown>).title === "string" ? (parsed as Record<string, unknown>).title as string : "График",
         data: safeData,
-        xKey: typeof (parsed as Record<string, unknown>).xKey === "string" ? (parsed as Record<string, unknown>).xKey as string : "x",
-        yKey: typeof (parsed as Record<string, unknown>).yKey === "string" ? (parsed as Record<string, unknown>).yKey as string : "y",
+        xKey: xKeyVal,
+        yKey: yKeyVal,
         nameKey: typeof (parsed as Record<string, unknown>).nameKey === "string" ? (parsed as Record<string, unknown>).nameKey as string : "name",
         valueKey: typeof (parsed as Record<string, unknown>).valueKey === "string" ? (parsed as Record<string, unknown>).valueKey as string : "value",
         series: series?.length ? series : undefined,

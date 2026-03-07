@@ -115,6 +115,7 @@ export async function GET(req: NextRequest) {
     try {
       const raw = await runReadOnlyQuery(
         `SELECT
+          COALESCE(ed.house_id, s_deal.house_id, s_lead.house_id, eb.house_id, eb.first_house_interest) AS house_id,
           COALESCE(MAX(h.name), MAX(h.public_house_name), 'Не определён') AS house,
           COUNT(DISTINCT eb.id) AS total,
           SUM(CASE WHEN eb.status = 1 THEN 1 ELSE 0 END) AS new_leads,
@@ -144,6 +145,7 @@ export async function GET(req: NextRequest) {
     }
     if (houseRows.length === 0 && totalLeads > 0) {
       houseRows = [{
+        house_id: null,
         house: "Без привязки к объекту",
         total: totalLeads,
         new_leads: totalLeads,
@@ -155,6 +157,7 @@ export async function GET(req: NextRequest) {
     // ── 5. Deals by manager (то же правило периода: deal_date или deal_date_start) ─
     const managerRows = await runReadOnlyQuery(
       `SELECT
+        u.id AS manager_id,
         COALESCE(u.users_name, 'Без менеджера') AS manager,
         COUNT(ed.deal_id) AS deals_count,
         SUM(CASE WHEN ed.deal_status = 150 THEN 1 ELSE 0 END) AS completed,
